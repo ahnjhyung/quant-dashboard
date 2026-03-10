@@ -1,0 +1,37 @@
+﻿# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Temporary
+/tmp/
+
+# Secrets and Personal Keys (CRITICAL)
+"각종 키 및 보안.txt"
+*.txt
+.env
+
+# Trading Signals
+auto_trading/signals/
+auto_trading/signals_log.jsonl

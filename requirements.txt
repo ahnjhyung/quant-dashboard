@@ -1,4 +1,26 @@
-streamlit
-pandas
-plotly
-yfinance
+# 퀀트 트레이딩 시스템 의존성
+streamlit>=1.30.0
+pandas>=2.0.0
+plotly>=5.17.0
+yfinance>=0.2.36
+numpy>=1.24.0
+scipy>=1.11.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# 금융 데이터
+fredapi>=0.5.1
+
+# 암호화폐
+pyupbit>=0.2.33
+
+# 한국투자증권 (선택)
+# mojito2>=0.2.0
+
+# 자동화
+schedule>=1.2.0
+
+# 데이터베이스 및 리포팅 파이프라인
+supabase>=2.3.0
+notion-client>=2.2.1
+google-generativeai>=0.3.0
