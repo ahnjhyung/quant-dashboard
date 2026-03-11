@@ -341,6 +341,60 @@ class ValueInvestingAnalyzer:
         
         return sorted(results, key=lambda x: x['combined_rank'])
 
+    def full_value_analysis(self, ticker: str, fcf: float = None) -> dict:
+        """
+        종합 가치투자 분석 및 기댓값(EV) 산출
+        PIOTROSKS 스코어와 DCF 안전마진을 조합하여 진입 시의 승률 및 EV를 예측합니다.
+        
+        Returns:
+            {
+                'ticker': 'AAPL',
+                'expected_value_pct': 15.3,
+                'win_probability': 0.65, ...
+            }
+        """
+        # 1. Piotroski Score 수집
+        fscore_data = self.piotroski_score(ticker)
+        score = fscore_data.get('score', 0)
+        
+        # 2. DCF Valuation 수집
+        dcf_data = self.dcf_valuation(ticker, fcf=fcf)
+        dcf_valid = 'error' not in dcf_data
+        upside_pct = dcf_data.get('upside_pct', 0) if dcf_valid else 0
+        margin_of_safety = dcf_data.get('margin_of_safety', 0) if dcf_valid else 0
+        
+        # 3. 승률 추정 (Piotroski Score 및 안전마진 기반)
+        # 기본 승률을 30%로 설정 (장기 투자의 불확실성 반영)
+        # F-score 1점당 +4% (Max +36%)
+        # 안전마진 10%당 +3% (Max +15%)
+        base_win_prob = 0.30
+        fscore_bonus = score * 0.04
+        margin_bonus = min(max(margin_of_safety * 100 / 10 * 0.03, 0), 0.15) if dcf_valid else 0
+        
+        win_probability = min(base_win_prob + fscore_bonus + margin_bonus, 0.90)
+        lose_probability = 1.0 - win_probability
+        
+        # 4. EV 산출
+        # avg_profit: 내재가치 도달 시의 수익률 (안전하게 최소 15% 적용)
+        # avg_loss: 펀더멘탈 훼손 시 손절 라인 (-20% 설정)
+        avg_profit = max(upside_pct, 15.0) if dcf_valid else 15.0
+        avg_loss = 20.0
+        
+        expected_value_pct = (win_probability * avg_profit) - (lose_probability * avg_loss)
+        
+        return {
+            'ticker': ticker,
+            'piotroski_score': score,
+            'margin_of_safety': margin_of_safety,
+            'upside_pct': upside_pct,
+            'win_probability': round(win_probability, 4),
+            'avg_profit_pct': round(avg_profit, 2),
+            'avg_loss_pct': round(avg_loss, 2),
+            'expected_value_pct': round(expected_value_pct, 2),
+            'dcf_valid': dcf_valid,
+            'fscore_category': fscore_data.get('category', '')
+        }
+
     def value_screen(self, tickers: list) -> list:
         """
         간단한 가치주 스크리닝
@@ -413,3 +467,10 @@ if __name__ == "__main__":
     print("\n[3] 피오트로스키 F-Score (MSFT)...")
     fscore = analyzer.piotroski_score("MSFT")
     print(f"    점수: {fscore['score']}/9 → {fscore['category']}")
+    
+    print("\n[4] 종합 가치투자 EV 산출 (AAPL)...")
+    full_analysis = analyzer.full_value_analysis("AAPL", fcf=100e9)
+    print(f"    추정 승률: {full_analysis['win_probability']*100:.1f}%")
+    print(f"    예상 수익/손실: +{full_analysis['avg_profit_pct']:.1f}% / -{full_analysis['avg_loss_pct']:.1f}%")
+    print(f"    Expected Value (EV): {full_analysis['expected_value_pct']:.2f}%")
+

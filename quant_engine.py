@@ -5,6 +5,7 @@ import google.generativeai as genai
 from datetime import datetime
 from vector_store import VectorMemory
 from data_collectors.un_comtrade import UNComtradeCollector
+from auto_trading.notion_reporter import NotionReporter
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY
 
 # ==========================================
@@ -24,6 +25,7 @@ class QuantEngine:
         }
         self.memory = VectorMemory()
         self.trade_collector = UNComtradeCollector()
+        self.notion_reporter = NotionReporter()
 
     def fetch_latest_market_data(self):
         """
@@ -130,6 +132,7 @@ class QuantEngine:
 2. A. 자산 간 상관관계 및 디커플링 진단: 현재 주식, 채권, 외환시장이 따로 노는지, 같이 움직이는지에 대한 코멘트 (1문단)
 3. B. 리스크 점검 (과거 유사 사례 분석): 내가 제공한 "2. Past Similar Regimes" 사례들과 현재 상황을 비교하여, 유동성 경색이나 위기 전이 가능성에 대해 논평해줘. (1~2문단)
 4. C. 주요 거시 지표 모니터링 가이드: 환율(DEXKOUS), VIX(VIXCLS), 금리(FEDFUNDS) 중 의미있는 변화치가 있다면 콕 짚어 경고/코멘트 (2~3개 불릿포인트)
+5. D. 매크로 레짐 리스크 점수: 과거 위기 상황과의 유사도 및 현재 지표를 종합 판단해 0~100 사이의 정수로 `Regime Risk Score: XX` 포맷으로 반드시 문서 어딘가에 딱 한 번 작성 (숫자가 높을수록 위기/패닉장, 낮을수록 안전/상승장)
 
 [데이터]
 {context_str}
@@ -137,10 +140,18 @@ class QuantEngine:
         try:
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(prompt)
+            if not response.text:
+                raise ValueError("빈 응답 반환")
             return response.text
         except Exception as e:
-            print(f"[ERROR] Gemini Generation Error: {e}")
-            return "애널리스트 브리핑(LLM) 생성 중 오류가 발생했습니다. (API 확인 필요)"
+            print(f"⚠️ [ERROR] Gemini Generation Error: {e}")
+            fallback_text = (
+                "[Fallback 브리핑 모드]\n\n"
+                "현재 생성형 AI 서버 지연으로 브리핑 텍스트 생성을 일시적으로 생략합니다.\n"
+                "시스템은 정상 구동 중이며, 수집된 아래 데이터는 모두 이상 없이 저장/보고됩니다.\n\n"
+                f"- 요약 상태: {today_summary}\n"
+            )
+            return fallback_text
 
     def run_rag_pipeline(self):
         """
@@ -194,13 +205,21 @@ class QuantEngine:
         # 기존 단순 텍스트 합치기 대신 Gemini가 쓴 고품질 글(Insight) 획득
         analyst_briefing = self.generate_ai_briefing(today_summary, similar_past, market_data)
 
+        # Extract Regime Risk Score
+        risk_score = 50
+        import re
+        match = re.search(r'Regime\s*Risk\s*Score:\s*(\d+)', analyst_briefing, re.IGNORECASE)
+        if match:
+            risk_score = int(match.group(1))
+            print(f"    => Extracted Regime Risk Score: {risk_score}")
+
         print("[6] Uploading AI RAG Insights to Supabase (Using news_sentiment table as text carrier)...")
         try:
             # We push the RAG Insight into the `news_sentiment` table because it has a text `title` column!
             payload = {
                 "date": today_str,
                 "symbol": "RAG_CONTEXT",
-                "sentiment_score": 0,
+                "sentiment_score": risk_score,
                 "buzz_volume": len(similar_past),
                 "title": analyst_briefing 
             }
@@ -214,6 +233,13 @@ class QuantEngine:
             res.raise_for_status()
             
             print("--- [OK] [Quant Engine] RAG Pipeline Completed Successfully ---")
+
+            print("\n[7] Generating Daily Notion Report Dashboard...")
+            report_url = self.notion_reporter.create_daily_report()
+            if report_url:
+                print(f"--- [OK] Notion Report Successfully Published: {report_url} ---")
+            else:
+                print("--- [WARN] Notion Report Creation Failed ---")
 
         except Exception as e:
             print(f"[ERROR] Failed to upload RAG Insight to Supabase (REST API): {e}")

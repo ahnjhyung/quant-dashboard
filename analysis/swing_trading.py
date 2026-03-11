@@ -345,6 +345,17 @@ class SwingTradingAnalyzer:
         target_price = round(current_price + 3 * latest_atr, 2)
         risk_reward = round((target_price - current_price) / (current_price - stop_loss), 2) if current_price > stop_loss else 0
         
+        # 기대값(EV) 계산 모델 (QuantAnalyst 기준 충족)
+        # 승률 추정: confidence (bull_ratio)
+        win_prob = max(0.1, min(0.9, bull_ratio))
+        lose_prob = 1.0 - win_prob
+        
+        avg_profit_pct = (target_price - current_price) / current_price
+        avg_loss_pct = (current_price - stop_loss) / current_price
+        
+        # EV = (승률 * 평균 이익률) - (패율 * 평균 손실률)
+        expected_value_pct = (win_prob * avg_profit_pct) - (lose_prob * avg_loss_pct)
+        
         return {
             'ticker': ticker,
             'current_price': round(current_price, 2),
@@ -378,6 +389,8 @@ class SwingTradingAnalyzer:
                 'target': target_price,
                 'risk_reward_ratio': risk_reward,
                 'risk_pct': round((current_price - stop_loss) / current_price * 100, 2),
+                'win_probability': round(win_prob, 3),
+                'expected_value_pct': round(expected_value_pct, 4)
             },
             'ohlcv': df,
         }
@@ -402,6 +415,8 @@ class SwingTradingAnalyzer:
             'stop_loss': result['risk_management']['stop_loss'],
             'target': result['risk_management']['target'],
             'rr_ratio': result['risk_management']['risk_reward_ratio'],
+            'expected_value_pct': result['risk_management']['expected_value_pct'],
+            'win_probability': result['risk_management']['win_probability'],
         }
 
 

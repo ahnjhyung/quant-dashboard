@@ -10,6 +10,8 @@ from datetime import datetime
 from notion_client import Client
 from config import NOTION_API_KEY, NOTION_PARENT_PAGE_ID, NOTION_DATABASE_ID
 from data_collectors.supabase_manager import SupabaseManager
+from analysis.pairs_trading import PairsTradingAnalyzer
+from analysis.event_swing import EventSwingAnalyzer
 
 class NotionReporter:
     def __init__(self):
@@ -21,7 +23,6 @@ class NotionReporter:
             
         self.db = SupabaseManager()
         self.parent_page_id = NOTION_PARENT_PAGE_ID
-        self.database_id = NOTION_DATABASE_ID
         
         if not self.parent_page_id:
             print("[WARN] [NotionReporter] NOTION_PARENT_PAGE_ID가 설정되지 않았습니다.")
@@ -52,7 +53,7 @@ class NotionReporter:
                 "object": "block",
                 "type": "callout",
                 "callout": {
-                    "rich_text": [{"type": "text", "text": {"content": "매일 아침 8시(KST) 자동 갱신되는 전문가 수준의 데일리 퀀트 브리핑 아카이브입니다.\n아래 표의 최신 항목(Row)을 열어 상세 브리핑을 확인하세요."}}],
+                    "rich_text": [{"type": "text", "text": {"content": "매일 아침 8시(KST) 자동 갱신되는 전문가 수준의 데일리 퀀트 브리핑 아카이브입니다.\n상세한 분석 내용은 생성된 하위 페이지를 클릭하여 확인하세요."}}],
                     "icon": {"emoji": "💡"}
                 }
             },
@@ -106,7 +107,7 @@ class NotionReporter:
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"type": "text", "text": {"content": "📚 데일리 브리핑 데이터베이스"}}]
+                    "rich_text": [{"type": "text", "text": {"content": "📚 데일리 브리핑 페이지 목록"}}]
                 }
             }
         ]
@@ -116,66 +117,44 @@ class NotionReporter:
             children=widget_blocks
         )
         
-        print("[NotionReporter] Creating new Daily Quant Reports database...")
-        db_response = self.client.databases.create(
-            parent={"type": "page_id", "page_id": self.parent_page_id},
-            title=[{"type": "text", "text": {"content": "Daily Quant Reports"}}],
-            properties={
-                "Name": {
-                    "title": {}
-                },
-                "Report Date": {
-                    "date": {}
-                },
-                "VIX": {
-                    "number": {
-                        "format": "number"
-                    }
-                },
-                "Strategy": {
-                    "select": {
-                        "options": [
-                           {"name": "NORMAL", "color": "blue"},
-                           {"name": "DEFENSE", "color": "red"}
-                        ]
-                    }
-                }
-            }
-        )
-        
-        db_id = db_response['id']
-        print(f"[OK] Dashboard Setup Complete! DB ID: {db_id}")
-        import time
-        print("Waiting 10 seconds for Notion to index properties...")
-        time.sleep(10)
-        
-        # .env 파일에 자동 추가하여 다음에 불러올 수 있도록 처리
-        try:
-            with open(".env", "a", encoding="utf-8") as f:
-                f.write(f"\nNOTION_DATABASE_ID={db_id}\n")
-            print(".env 파일에 NOTION_DATABASE_ID 등록 성공")
-        except Exception as e:
-            print(f".env 파일 기록 실패: {e}")
-            
-        self.database_id = db_id
-        return db_id
+        print(f"[OK] Dashboard Setup Complete!")
+        return self.parent_page_id
+
+    def get_or_create_database(self):
+        """하위 호환성을 위한 stub 메서드"""
+        return self.parent_page_id
 
     def create_daily_report(self):
-        """GAS 이메일 리포트 양식을 본딴 노션 대시보드 리포트 생성"""
+        """GAS 이메일 리포트 양식을 본딴 노션 하위 페이지 리포트 생성"""
         if not self.client or not self.parent_page_id:
             return None
-
-        # 새로 도입된 Database ID 로직 확인
-        if not self.database_id:
-            print("[WARN] NOTION_DATABASE_ID가 누락되어 구조를 처음부터 셋업합니다.")
-            self.setup_dashboard()
             
         today_str = datetime.now().strftime("%Y-%m-%d")
         
-        # 1. 데이터 로드
+        # 1. 데이터 로드 (DB + 실시간 분석 모듈 연동)
         recent_assets = self.db.get_recent_high_ev_assets(limit=10)
         macro_dict = self.db.get_latest_macro()
         rag_text = self.db.get_latest_rag_insight()
+        
+        # 신규 전략 모듈 즉시 수행 (브릿지)
+        pairs_analyzer = PairsTradingAnalyzer()
+        swing_analyzer = EventSwingAnalyzer()
+        
+        # 관심 페어 분석
+        pair_results = []
+        try:
+            pair_results.append(pairs_analyzer.analyze_pair("BTC-USD", "ETH-USD", "1y"))
+            pair_results.append(pairs_analyzer.analyze_pair("105560.KS", "055550.KS", "1y"))
+        except Exception as e:
+            print(f"[WARN] 페어 분석 런타임 오류: {e}")
+            
+        # 관심 이벤트 분석
+        swing_results = []
+        try:
+            swing_results.append(swing_analyzer.analyze_event_swing_ev("005930.KS", "자사주 매입"))
+            swing_results.append(swing_analyzer.analyze_event_swing_ev("086520.KQ", "대규모 유상증자"))
+        except Exception as e:
+            print(f"[WARN] 스윙 이벤트 분석 런타임 오류: {e}")
 
         # 데이터 파싱 헬퍼 함수
         def get_macro(ticker, is_prev=False):
@@ -297,14 +276,21 @@ class NotionReporter:
                 
                 # EV가 명시되어 있는(매크로, 지수 제외) 실제 종목만 필터링
                 if ev_score is not None and symbol not in ['BTC-USD', 'GC=F', '^GSPC'] and symbol:
-                    ev = str(ev_score)
+                    try:
+                        ev_val = float(ev_score)
+                        ev_str = f"EV. {ev_val:.4f}"
+                        ev_color = "green" if ev_val > 0 else "red"
+                    except:
+                        ev_str = f"EV. {ev_score}"
+                        ev_color = "orange"
+                        
                     asset_rows.append({
                         "type": "table_row",
                         "table_row": {
                             "cells": [
-                                [{"type": "text", "text": {"content": f"추천: {symbol}"}}],
-                                [{"type": "text", "text": {"content": f"EV. {ev}"}, "annotations": {"color": "orange"}}],
-                                [{"type": "text", "text": {"content": "가격"}}],
+                                [{"type": "text", "text": {"content": f"💎 추천: {symbol}"}, "annotations": {"bold": True}}],
+                                [{"type": "text", "text": {"content": ev_str}, "annotations": {"color": ev_color, "bold": True}}],
+                                [{"type": "text", "text": {"content": "종가"}}],
                                 [{"type": "text", "text": {"content": f"${price}" if price != "-" else "-"}}],
                                 [{"type": "text", "text": {"content": "-"}}],
                                 [{"type": "text", "text": {"content": "-"}}]
@@ -321,6 +307,87 @@ class NotionReporter:
                 "has_column_header": False,
                 "has_row_header": False,
                 "children": asset_rows
+            }
+        })
+        blocks.append({"object": "block", "type": "divider", "divider": {}})
+        
+        # 섹션 1.5: 신규 퀀트 전략(페어 트레이딩 & 이벤트 스윙) 알림판
+        blocks.append({
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {"rich_text": [{"type": "text", "text": {"content": "⚡ 데일리 퀀트 알파 전략 시그널 (Pair & Swing)"}}]}
+        })
+        
+        quant_strats_rows = []
+        # 페어 트레이딩 테이블 행 추가
+        for res in pair_results:
+            if 'error' in res: continue
+            pair_name = res.get('pair', '')
+            signal = res.get('signal', 'HOLD')
+            current_z = res.get('current_z_score', 0)
+            ev = res.get('risk_metrics', {}).get('expected_value_pct', 0)
+            reason = res.get('reason', '')
+            
+            signal_color = "red" if signal == "SHORT_SPREAD" else "blue" if signal == "LONG_SPREAD" else "gray"
+            ev_color = "green" if ev > 0 else "red"
+            
+            quant_strats_rows.append({
+                "type": "table_row",
+                "table_row": {
+                    "cells": [
+                        [{"type": "text", "text": {"content": "🔗 페어 트레이딩"}, "annotations": {"bold": True}}],
+                        [{"type": "text", "text": {"content": pair_name}}],
+                        [{"type": "text", "text": {"content": f"신호: {signal}"}, "annotations": {"color": signal_color, "bold": True}}],
+                        [{"type": "text", "text": {"content": f"Z-Score: {current_z}"}}],
+                        [{"type": "text", "text": {"content": f"EV: {ev*100:.2f}%"}, "annotations": {"color": ev_color, "bold": True}}],
+                        [{"type": "text", "text": {"content": reason[:20]+".."}, "annotations": {"italic": True}}]
+                    ]
+                }
+            })
+            
+        # 이벤트 스윙 테이블 행 추가
+        for res in swing_results:
+            ticker = res.get('ticker', '')
+            keyword = res.get('event_keyword', '')
+            signal = res.get('signal', 'HOLD')
+            ev = res.get('expected_value_pct', 0)
+            reason = res.get('reason', '')
+            
+            signal_color = "red" if signal == "SHORT" else "blue" if signal == "BUY" else "gray"
+            ev_color = "green" if ev > 0 else "red"
+            
+            quant_strats_rows.append({
+                "type": "table_row",
+                "table_row": {
+                    "cells": [
+                        [{"type": "text", "text": {"content": "📰 이벤트 스윙"}, "annotations": {"bold": True}}],
+                        [{"type": "text", "text": {"content": f"{ticker} [{keyword}]"}}],
+                        [{"type": "text", "text": {"content": f"신호: {signal}"}, "annotations": {"color": signal_color, "bold": True}}],
+                        [{"type": "text", "text": {"content": "-"}}],
+                        [{"type": "text", "text": {"content": f"EV: {ev*100:.2f}%"}, "annotations": {"color": ev_color, "bold": True}}],
+                        [{"type": "text", "text": {"content": reason[:25]+".."}, "annotations": {"italic": True}}]
+                    ]
+                }
+            })
+            
+        if not quant_strats_rows:
+            quant_strats_rows.append({
+                "type": "table_row",
+                "table_row": {
+                    "cells": [
+                        [{"type": "text", "text": {"content": "신규 알파 시그널 없음"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}]
+                    ]
+                }
+            })
+
+        blocks.append({
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": 6,
+                "has_column_header": False,
+                "has_row_header": False,
+                "children": quant_strats_rows
             }
         })
         blocks.append({"object": "block", "type": "divider", "divider": {}})
@@ -473,15 +540,18 @@ class NotionReporter:
                     })
                     continue
 
-                # 핵심 요약 (주황색 콜아웃)
-                if "[핵심 요약]" in line:
+                # 핵심 요약 (주황색 콜아웃 혹은 인용구)
+                if "[핵심 요약]" in line or "1줄 문장 요약" in line:
+                    clean_text = line.replace("[핵심 요약]", "").replace("1줄 문장 요약", "").strip()
+                    if clean_text.startswith(":") or clean_text.startswith("-"):
+                        clean_text = clean_text[1:].strip()
+                        
                     blocks.append({
                         "object": "block",
-                        "type": "callout",
-                        "callout": {
-                            "rich_text": [{"type": "text", "text": {"content": "핵심 요약"}, "annotations": {"bold": True, "color": "orange"}}],
-                            "icon": {"emoji": "📌"},
-                            "color": "orange_background"
+                        "type": "quote",
+                        "quote": {
+                            "rich_text": [{"type": "text", "text": {"content": f"🎯 {clean_text}"}, "annotations": {"bold": True, "color": "purple"}}],
+                            "color": "purple_background"
                         }
                     })
                     blocks.append(empty_line_block.copy())
@@ -542,25 +612,14 @@ class NotionReporter:
                 }
             })
 
-        # 3. 노션 데이터베이스 Row(페이지) 생성 API 호출
+        # 3. 노션 하위 페이지 생성 API 호출 (데이터베이스 표 대신 자식 페이지로 직접 추가)
         try:
-            print(f"[NotionReporter] Inserting report into DB: {self.database_id}")
+            print(f"[NotionReporter] Inserting report page under parent: {self.parent_page_id}")
             new_page = self.client.pages.create(
-                parent={"type": "database_id", "database_id": self.database_id},
+                parent={"type": "page_id", "page_id": self.parent_page_id},
                 properties={
-                    "Name": {
-                        "title": [
-                            {"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str})"}}
-                        ]
-                    },
-                    "Report Date": {
-                        "date": {"start": today_str}
-                    },
-                    "VIX": {
-                        "number": vix
-                    },
-                    "Strategy": {
-                        "select": {"name": "DEFENSE" if vix > 25 else "NORMAL"}
+                    "title": {
+                        "title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) - {strat_mode}"}}]
                     }
                 },
                 children=blocks

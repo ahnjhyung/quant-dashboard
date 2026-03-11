@@ -389,6 +389,29 @@ class BitcoinAnalyzer:
             overall = '🟠 매도 주의 국면'
         else:
             overall = '⚪ 중립 / 관망 국면'
+
+        # EV (기대값) 및 승률(Win Prob) 계산 
+        # (불/베어 시그널 비율 기반)
+        total_signals = bull_count + bear_count
+        if total_signals > 0:
+            base_win_prob = bull_count / (total_signals + 2) + 0.3  # 기본 확률 보정
+        else:
+            base_win_prob = 0.5
+            
+        win_prob = min(0.9, max(0.1, base_win_prob))
+        lose_prob = 1.0 - win_prob
+        
+        # Upside / Downside (레인보우 밴드 및 MVRV z-score 기반 근사치)
+        # 상단 목표가는 적정가치(fair_value)의 다음 밴드 수준, 하단 손절가는 직전 지지 밴드
+        fair_value = rainbow.get('fair_value', current_price)
+        target_upside = max(current_price * 1.2, fair_value * 1.5)  # 보수적인 업사이드
+        stop_downside = min(current_price * 0.8, fair_value * 0.7)  # 보수적인 다운사이드
+        
+        avg_profit = (target_upside - current_price) / current_price
+        avg_loss = (current_price - stop_downside) / current_price
+        
+        # 기대수익률(EV_pct) = (승률 * 평균수익률) - (패율 * 평균손실률)
+        ev_pct = (win_prob * avg_profit) - (lose_prob * avg_loss)
         
         return {
             'current_price': current_price,
@@ -401,6 +424,8 @@ class BitcoinAnalyzer:
             'signal_breakdown': signals,
             'bull_signals': bull_count,
             'bear_signals': bear_count,
+            'win_probability': round(win_prob, 3),
+            'expected_value_pct': round(ev_pct, 4),
             'analysis_timestamp': datetime.now().isoformat(),
         }
 

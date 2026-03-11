@@ -49,19 +49,40 @@ class CBRefixingAnalyzer:
         current_price = price_info['current_price']
         rsi = price_info['rsi']['value']
         
-        # 3. 기대값(EV) 추정 (가설: 바닥권(RSI < 40)에서 리픽싱 완료 시 반등 확률 높음)
-        # 승률 계산: RSI가 낮을수록, 200 EMA 위에 있을수록 높게 산정
-        base_win_prob = 0.55
-        if rsi < 40: base_win_prob += 0.1
-        if price_info['ma_cross'].get('price_above_ema200'): base_win_prob += 0.1
+        # 3. 기대값(EV) 추정
+        # QuantAnalyst: 리픽싱 후 주가 반등 확률(승률) 추정 모델 개선
+        # 기반 가정: RSI가 낮을수록(과매도), 추세(EMA200) 위에 있을수록 반등 확률 증가
+        # 향후 과제: 실제 과거 백테스트 데이터를 통한 통계 모델(Logistic Regression 등) 연동
         
-        avg_gain = 0.20  # 리픽싱 후 반등 시 평균 20% 이익 가정
-        avg_loss = 0.10  # 추가 하락 시 10% 손실 가정
+        # 3.1 승률(Win Probability) 추정치 조정
+        base_win_prob = 0.50 # 기본 50:50
         
+        # RSI 에 따른 확률 보정 (과매도일수록 반등 확률 up)
+        if rsi < 30:
+            base_win_prob += 0.15 
+        elif rsi < 40:
+            base_win_prob += 0.10
+        elif rsi > 70:
+            base_win_prob -= 0.15 # 과매수 상태의 리픽싱은 신뢰성 하락
+            
+        # 추세 지표 반영 
+        if price_info['ma_cross'].get('price_above_ema200', False):
+            base_win_prob += 0.05
+            
+        base_win_prob = min(max(base_win_prob, 0.1), 0.9) # 10% ~ 90% 제한
+        
+        # 3.2 이익/손실 산출 로직
+        # 발행가 대비 70% 한도 도달 등 추가적인 하방경직성이 있다면 여기서 조정해야 함
+        avg_gain = 0.20  # 리픽싱에 따른 평균 기대 반등 수익 (추후 데이터 피팅 필요)
+        avg_loss = 0.10  # 리픽싱 효과 실패 시 컷오프(손절) 라인
+        
+        # 3.3 최종 EV (Expected Value) 산출 
+        # EV = (승률 * 평균이익) - (패율 * 평균손실)
         ev = (base_win_prob * avg_gain) - ((1 - base_win_prob) * avg_loss)
         
-        signal = 'PARTIAL' if ev > 0.05 else 'HOLD'
-        if ev > 0.10 and rsi < 35:
+        # 4. 신호 판별 및 출력
+        signal = 'PARTIAL' if ev > 0.03 else 'HOLD'
+        if ev > 0.08 and rsi < 40:
             signal = 'ENTER'
 
         return {
@@ -74,7 +95,7 @@ class CBRefixingAnalyzer:
             'expected_value': round(ev, 4),
             'win_probability': round(base_win_prob, 2),
             'signal': signal,
-            'reason': f"리픽싱 공시 발견 ({latest.get('rcept_dt')}) 및 EV {ev*100:.1f}% 산출",
+            'reason': f"리픽싱({latest.get('rcept_dt')}) 기반 승률 {base_win_prob*100:.0f}%, EV {ev*100:.1f}%",
             'dart_url': f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
         }
 

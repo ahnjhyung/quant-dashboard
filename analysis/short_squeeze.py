@@ -466,6 +466,29 @@ class ShortSqueezeAnalyzer:
         score_data   = self._compute_squeeze_score(short, tech, float_shares)
         result.update(score_data)
 
+        # Step 4.5: EV (기댓값) 산출
+        sq_score = result["squeeze_score"]
+        # 점수가 40 미만이면 스퀴즈 확률 5%, 40 이상부터는 최대 60%까지 증가
+        if sq_score < 40:
+            win_probability = 0.05
+        else:
+            win_probability = 0.05 + ((sq_score - 40) / 60.0) * 0.55
+            
+        win_probability = min(max(win_probability, 0.0), 1.0)
+        
+        # 단기 스퀴즈 성공 시 평균 기대수익 +50%, 실패 후 회귀 시 평균 손실 -20%
+        avg_profit = 50.0  
+        avg_loss = 20.0
+        lose_probability = 1.0 - win_probability
+        
+        expected_value_pct = (win_probability * avg_profit) - (lose_probability * avg_loss)
+        
+        result["win_probability"] = round(win_probability, 4)
+        result["avg_profit_pct"] = avg_profit
+        result["avg_loss_pct"] = avg_loss
+        result["expected_value_pct"] = round(expected_value_pct, 2)
+        result["expected_value_note"] = f"EV: {expected_value_pct:.2f}% (승률 {win_probability:.1%})"
+
         # Step 5: 레벨 및 신호 결정 (임계값 내림차순 탐색)
         score = result["squeeze_score"]
         for threshold, (level, summary, signal) in sorted(SQUEEZE_LEVELS.items(), reverse=True):
@@ -658,6 +681,7 @@ if __name__ == "__main__":
     print(f"  레벨:          {result['level']}")
     print(f"  신호:          {result['signal']}")
     print(f"  요약:          {result['summary']}")
+    print(f"  기댓값(EV):     {result.get('expected_value_note', '')}")
     print(f"  위험 메모:     {result['risk_note']}")
 
     c = result.get("short_metrics", {})

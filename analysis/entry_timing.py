@@ -15,6 +15,7 @@ from datetime import datetime
 from analysis.swing_trading import SwingTradingAnalyzer
 from analysis.value_investing import ValueInvestingAnalyzer
 from analysis.derivatives import DerivativesAnalyzer
+from data_collectors.supabase_manager import SupabaseManager
 
 
 class EntryTimingEngine:
@@ -38,6 +39,13 @@ class EntryTimingEngine:
         self.swing = SwingTradingAnalyzer()
         self.value = ValueInvestingAnalyzer()
         self.derivatives = DerivativesAnalyzer()
+        self.db = SupabaseManager()
+        self.regime_risk_score = None  # Lazy load를 위해 None으로 초기화
+
+    def _get_regime_risk_score(self) -> int:
+        if self.regime_risk_score is None:
+            self.regime_risk_score = self.db.get_regime_risk_score()
+        return self.regime_risk_score
 
     def detect_market_regime(self) -> dict:
         """
@@ -181,6 +189,7 @@ class EntryTimingEngine:
             'recommended_amount': round(capital * recommended, 0),
             'expected_value': round(win_probability * win_return - q * loss_return, 4),
             'note': '켈리 공식은 장기 기대값 최대화 도구. 실제 투자 시 반켈리(50%) 사용 권장.',
+            'risk_adjusted': False
         }
 
     def analyze_entry(self, ticker: str, asset_class: str = 'us_stock') -> dict:
@@ -248,18 +257,36 @@ class EntryTimingEngine:
                 results['fundamentals'] = {'error': str(e)}
         
         # 5. 포지션 사이징 (기술적 신호 기반)
-        rsi = tech['rsi']['value']
-        bb_pct = tech['bollinger']['pct_b']
-        confidence = tech['confidence']
+        # DEFENSIVE: 기술적 분석 결과가 없을 경우를 대비하여 기본값 설정
+        tech_data = results.get('technical', {})
+        rsi = tech_data.get('rsi', 50.0)
+        bb_pct = tech_data.get('bb_pct_b', 0.5)
+        confidence = tech_data.get('swing_confidence', 0.5)
         
-        # RSI + 볼린저 기반 승률 추정
+        # RSI + 볼린저 기반 기본 승률 추정
         if rsi < 30 and bb_pct < 0.1:
-            win_prob = 0.65  # 과매도 구간 역발상
+            base_win_prob = 0.65  # 과매도 구간 역발상
         elif rsi > 70 and bb_pct > 0.9:
-            win_prob = 0.35  # 과매수는 불리
+            base_win_prob = 0.35  # 과매수는 불리
         else:
-            win_prob = 0.5 + (confidence - 0.5) * 0.3
+            base_win_prob = 0.5 + (confidence - 0.5) * 0.3
         
+        # [NEW Phase 6] 🚀 매크로 레짐 리스크 점수 반영 (RAG 기반 승률 패널티)
+        risk_score = self._get_regime_risk_score()
+        
+        # risk_score: 0(매우안전) ~ 100(매우위험)
+        # 위험할수록 승률을 강제로 깎고(승률 패널티), 투자 비중 한도(max_risk_pct) 축소
+        # 50을 중립 기준으로 삼음
+        penalty_ratio = max(0, risk_score - 50) / 100.0  # 0.0 ~ 0.5
+        win_prob = base_win_prob - penalty_ratio
+        win_prob = max(0.1, win_prob)  # 최소 승률 보장
+        
+        dynamic_max_risk = 0.25
+        if risk_score > 80:
+            dynamic_max_risk = 0.05  # 위험 장세에서는 최대 비중 5%로 극단적 축소
+        elif risk_score > 60:
+            dynamic_max_risk = 0.15
+            
         risk_pct = (current_price - tech['risk_management']['stop_loss']) / current_price
         reward_pct = (tech['risk_management']['target'] - current_price) / current_price
         
@@ -267,8 +294,16 @@ class EntryTimingEngine:
             win_probability=win_prob,
             win_return=reward_pct,
             loss_return=abs(risk_pct),
-            capital=10_000_000  # 1천만원 기준 예시
+            capital=10_000_000,  # 1천만원 기준 예시
+            max_risk_pct=dynamic_max_risk
         )
+        
+        sizing['regime_risk_score'] = risk_score
+        sizing['base_win_prob'] = round(base_win_prob, 3)
+        if penalty_ratio > 0:
+            sizing['note'] = f"[레짐 패널티 적용됨] 리스크 점수 {risk_score}점 폭락장 유사성 감지 → 승률 {penalty_ratio*100:.1f}%p 삭감 및 비중 축소."
+            sizing['risk_adjusted'] = True
+            
         results['position_sizing'] = sizing
         
         # 6. 최종 진입 판정

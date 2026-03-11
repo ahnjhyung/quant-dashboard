@@ -1,0 +1,202 @@
+[
+  {
+    "pair": "QQQ vs XLK",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.1625,
+    "correlation": 0.9944,
+    "hedge_ratio_beta": 4.2874,
+    "current_z_score": -0.04,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score -0.04)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0121,
+      "expected_value_pct": -0.0017
+    },
+    "prices": {
+      "QQQ": 606.29,
+      "XLK": 139.935
+    },
+    "category": "기술주 ETF"
+  },
+  {
+    "pair": "086790.KS vs 316140.KS",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.2988,
+    "correlation": 0.9832,
+    "hedge_ratio_beta": 3.2431,
+    "current_z_score": 0.54,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 0.54)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0522,
+      "expected_value_pct": -0.0072
+    },
+    "prices": {
+      "086790.KS": 113400.0,
+      "316140.KS": 33350.0
+    },
+    "category": "한국 금융 (하나 vs 우리)"
+  },
+  {
+    "pair": "GLD vs SLV",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.3381,
+    "correlation": 0.9219,
+    "hedge_ratio_beta": 4.9615,
+    "current_z_score": -0.06,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score -0.06)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0639,
+      "expected_value_pct": -0.0088
+    },
+    "prices": {
+      "GLD": 474.41,
+      "SLV": 77.0932
+    },
+    "category": "귀금속 (금 vs 은)"
+  },
+  {
+    "pair": "105560.KS vs 055550.KS",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.3462,
+    "correlation": 0.9851,
+    "hedge_ratio_beta": 1.7477,
+    "current_z_score": 1.47,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 1.47)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.037,
+      "expected_value_pct": -0.0051
+    },
+    "prices": {
+      "105560.KS": 151300.0,
+      "055550.KS": 91100.0
+    },
+    "category": "한국 금융 (KB vs 신한)"
+  },
+  {
+    "pair": "MSFT vs AAPL",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.6332,
+    "correlation": 0.7052,
+    "hedge_ratio_beta": 1.37,
+    "current_z_score": 0.7,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 0.70)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0577,
+      "expected_value_pct": -0.0079
+    },
+    "prices": {
+      "MSFT": 402.9,
+      "AAPL": 260.13
+    },
+    "category": "미국 빅테크 대장"
+  },
+  {
+    "pair": "NVDA vs AMD",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.7681,
+    "correlation": 0.6798,
+    "hedge_ratio_beta": 0.8707,
+    "current_z_score": -0.48,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score -0.48)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0474,
+      "expected_value_pct": -0.0065
+    },
+    "prices": {
+      "NVDA": 185.11,
+      "AMD": 204.515
+    },
+    "category": "미국 반도체"
+  },
+  {
+    "pair": "BTC-USD vs ETH-USD",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.8551,
+    "correlation": 0.7084,
+    "hedge_ratio_beta": 26.3742,
+    "current_z_score": 0.95,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 0.95)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0217,
+      "expected_value_pct": -0.003
+    },
+    "prices": {
+      "BTC-USD": 70749.6016,
+      "ETH-USD": 2067.1836
+    },
+    "category": "암호화폐 대장주"
+  },
+  {
+    "pair": "005380.KS vs 000270.KS",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.8731,
+    "correlation": 0.9337,
+    "hedge_ratio_beta": 3.2891,
+    "current_z_score": 1.03,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 1.03)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0947,
+      "expected_value_pct": -0.013
+    },
+    "prices": {
+      "005380.KS": 530000.0,
+      "000270.KS": 162000.0
+    },
+    "category": "한국 자동차 (현대차 vs 기아)"
+  },
+  {
+    "pair": "005930.KS vs 000660.KS",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.8939,
+    "correlation": 0.9126,
+    "hedge_ratio_beta": 0.1283,
+    "current_z_score": 0.03,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 0.03)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0853,
+      "expected_value_pct": -0.0117
+    },
+    "prices": {
+      "005930.KS": 190000.0,
+      "000660.KS": 955000.0
+    },
+    "category": "한국 반도체 (삼성전자 vs SK하이닉스)"
+  },
+  {
+    "pair": "GOOGL vs META",
+    "is_cointegrated": false,
+    "coint_pvalue": 0.9834,
+    "correlation": 0.7157,
+    "hedge_ratio_beta": 0.2572,
+    "current_z_score": 0.31,
+    "signal": "HOLD",
+    "reason": "정상 궤도 내 (Z-Score 0.31)",
+    "risk_metrics": {
+      "win_probability": 0.35,
+      "avg_profit_pct": 0.0315,
+      "expected_value_pct": -0.0043
+    },
+    "prices": {
+      "GOOGL": 308.68,
+      "META": 652.47
+    },
+    "category": "미국 인터넷/광고"
+  }
+]

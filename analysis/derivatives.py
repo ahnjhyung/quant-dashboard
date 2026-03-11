@@ -195,9 +195,13 @@ class DerivativesAnalyzer:
         options: list = None,
         price_range: tuple = None,
         num_points: int = 200,
+        current_price: float = None,
+        volatility: float = 0.20,
+        days_to_expiry: float = 30.0
     ) -> dict:
         """
         현물 + 옵션 혼합 포지션 P&L 시뮬레이션
+        추가로 Black-Scholes 기반의 Log-normal 확률분포를 적용하여 기댓값(EV 달러)과 승률 계산
         
         Args:
             spot_qty: 현물 보유 수량 (음수=숏)
@@ -211,6 +215,9 @@ class DerivativesAnalyzer:
                 }, ...
             ]
             price_range: (최솟값, 최댓값)
+            current_price: 현재 주가 (미입력 시 spot_avg_price 사용)
+            volatility: 내재변동성 (기본 0.20 = 20%)
+            days_to_expiry: 옵션 만기까지 남은 일수
             
         Returns:
             {
@@ -221,6 +228,9 @@ class DerivativesAnalyzer:
                 'breakeven': [...],
                 'max_profit': ...,
                 'max_loss': ...,
+                'win_probability': 0.65,
+                'expected_value': 125.40,
+                'expected_value_note': '...',
             }
         """
         if options is None:
@@ -257,6 +267,30 @@ class DerivativesAnalyzer:
         sign_changes = np.where(np.diff(np.sign(total_pnl)))[0]
         breakevens = [round(float(prices[i]), 2) for i in sign_changes]
         
+        # 수익/손실 확률 및 EV (기댓값) 계산 (Log-normal 분포 역추산 적용)
+        S0 = current_price or (spot_avg_price if spot_avg_price else 100)
+        T_years = days_to_expiry / 365.0 if days_to_expiry > 0 else 0.001
+        
+        expected_value = 0.0
+        win_prob = 0.0
+        dp = (price_range[1] - price_range[0]) / num_points
+        
+        for p, pnl in zip(prices, total_pnl):
+            if p <= 0: continue
+            
+            # Log-normal PDF
+            ln_ret = math.log(p / S0)
+            d = (ln_ret + 0.5 * volatility**2 * T_years) / (volatility * math.sqrt(T_years))
+            pdf = (1.0 / (p * volatility * math.sqrt(2 * math.pi * T_years))) * math.exp(-0.5 * d**2)
+            
+            prob = pdf * dp
+            expected_value += pnl * prob
+            if pnl > 0:
+                win_prob += prob
+                
+        # win_prob 보정 (적분 오차 방지)
+        win_prob = min(win_prob, 1.0)
+        
         return {
             'prices': prices.tolist(),
             'spot_pnl': spot_pnl.tolist(),
@@ -267,6 +301,9 @@ class DerivativesAnalyzer:
             'max_loss': round(float(total_pnl.min()), 2),
             'option_details': option_details,
             'risk_reward': round(abs(total_pnl.max() / total_pnl.min()), 2) if total_pnl.min() != 0 else float('inf'),
+            'win_probability': round(win_prob, 4),
+            'expected_value': round(expected_value, 2),
+            'expected_value_note': f"EV: ${expected_value:,.2f} (확률기반 승률 {win_prob:.1%})",
         }
 
     def vix_analysis(self) -> dict:
@@ -448,11 +485,15 @@ if __name__ == "__main__":
         options=[
             {'type': 'put_long', 'K': 145, 'premium': 3.5, 'qty': 1}
         ],
-        price_range=(120, 185)
+        price_range=(120, 185),
+        current_price=150,
+        volatility=0.25,
+        days_to_expiry=30
     )
     print(f"    최대 이익: ${pnl['max_profit']:,.0f}")
     print(f"    최대 손실: ${pnl['max_loss']:,.0f}")
     print(f"    손익분기점: {pnl['breakeven_prices']}")
+    print(f"    기댓값(EV): {pnl['expected_value_note']}")
     
     print("\n[3] VIX 분석...")
     vix = analyzer.vix_analysis()
