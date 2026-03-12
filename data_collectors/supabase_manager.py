@@ -126,13 +126,51 @@ class SupabaseManager:
         if not self.client:
             return ""
         try:
+            # symbol이 RAG_CONTEXT인 최신 데이터 조회
             response = self.client.table("news_sentiment").select("title").eq("symbol", "RAG_CONTEXT").order("created_at", desc=True).limit(1).execute()
             if response.data:
                 return response.data[0].get("title", "")
-            return ""
+            return "No RAG Insights found for today."
         except Exception as e:
             print(f"[ERROR] [SupabaseManager] get_latest_rag_insight 에러: {e}")
             return ""
+
+    def get_latest_macro(self) -> Dict[str, Dict[str, float]]:
+        """
+        주요 거시경제 지표들의 최신값과 이전계값을 가져와 딕셔너리로 반환합니다.
+        notion_reporter.py 에서 기대하는 형식: {ticker: {"current": val, "prev": val}}
+        """
+        if not self.client:
+            return {}
+            
+        tickers = [
+            "FEDFUNDS", "DGS2", "DGS10", "DEXKOUS", "VIXCLS", "T10Y2Y", "TEDRATE", 
+            "STLFSI3", "UNRATE", "M2SL", "NFCI", "WTREGEN", "RRPONTSYD", "WALCL",
+            "BAMLH0A0HYM2EY", "BAMLH0A0HYM2", "CPALTT01USM657N", "PCEPI", "KR_BASE_RATE"
+        ]
+        
+        result = {}
+        try:
+            for ticker in tickers:
+                # 최신 2개 값 가져오기
+                response = self.client.table("macro_indicators")\
+                    .select("value, date")\
+                    .eq("ticker", ticker)\
+                    .order("date", desc=True)\
+                    .limit(2)\
+                    .execute()
+                
+                if response.data:
+                    current = float(response.data[0]['value'])
+                    prev = float(response.data[1]['value']) if len(response.data) > 1 else current
+                    result[ticker] = {"current": current, "prev": prev}
+                else:
+                    result[ticker] = {"current": 0.0, "prev": 0.0}
+                    
+            return result
+        except Exception as e:
+            print(f"[ERROR] [SupabaseManager] get_latest_macro 에러: {e}")
+            return {}
 
     def get_regime_risk_score(self) -> int:
         """quant_engine이 news_sentiment에 남긴 RAG_CONTEXT의 sentiment_score (Regime Risk Score) 조회"""

@@ -49,7 +49,7 @@ jobs:
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-        ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        ECOS_API_KEY: ${{ secrets.BOK_API_KEY }}
         FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         DART_API_KEY: ${{ secrets.DART_API_KEY }}
         CUSTOMS_API_KEY: ${{ secrets.CUSTOMS_API_KEY }}
@@ -86,7 +86,7 @@ jobs:
       env:
         # 주요 API 키 및 SMTP 설정
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         SMTP_HOST: smtp.gmail.com
         SMTP_PORT: "587"
         SMTP_USER: ${{ secrets.SMTP_USER }}

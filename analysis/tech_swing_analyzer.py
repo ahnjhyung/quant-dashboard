@@ -168,6 +168,9 @@ class TechnicalSwingAnalyzer:
             prev = df.iloc[-2]
             
             curr_price = float(last['Close'])
+            rsi = last['rsi']
+            atr = last['atr']
+
             # 3. 매크로 국면 및 시장 정보 연동
             regime = self.macro_analyzer.get_current_regime()
             spy_df = self.fetch_yahoo_data("SPY", interval=interval, period=period)
@@ -218,19 +221,14 @@ class TechnicalSwingAnalyzer:
             self.logger.error(f"Error analyzing {ticker}: {e}")
             return None
 
-    def run_multi_analysis(self, tickers: list, interval: str = "1d") -> list:
-        """여러 티커에 대한 일괄 분석 (스윙 & 데이 병행)"""
+    def run_multi_analysis(self, tickers: list, interval: str = "1h", period: str = "3mo") -> list:
+        """여러 티커에 대한 일괄 분석"""
         results = []
         for t in tickers:
-            # 1. 스윙 분석 (일봉)
-            res_swing = self.analyze_ticker(t, interval="1d", period="6mo")
-            if res_swing:
-                results.append(res_swing)
-            
-            # 2. 데이트레이딩 분석 (1시간 봉)
-            res_day = self.analyze_ticker(t, interval="1h", period="1mo")
-            if res_day:
-                results.append(res_day)
+            # 전달받은 interval과 period를 사용하여 분석 수행
+            res = self.analyze_ticker(t, interval=interval, period=period)
+            if res:
+                results.append(res)
                 
         return results
 

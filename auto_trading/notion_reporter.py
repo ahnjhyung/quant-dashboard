@@ -38,6 +38,9 @@ class NotionReporter:
         print("[NotionReporter] 기존 페이지 초기화 중...")
         children = self.client.blocks.children.list(block_id=self.parent_page_id).get('results', [])
         for block in children:
+            # 데이터베이스 블록은 삭제하지 않고 보존합니다 (리포트 아카이브 보호)
+            if block['type'] == 'child_database':
+                continue
             try:
                 self.client.blocks.delete(block_id=block['id'])
             except:
@@ -166,12 +169,12 @@ class NotionReporter:
         complex_results = []
         try:
             # 가치투자 (삼전, NVDA 샘플)
-            complex_results.append({"type": "VALUE", "res": value_analyzer.analyze_intrinsic_value("005930.KS")})
-            complex_results.append({"type": "VALUE", "res": value_analyzer.analyze_intrinsic_value("NVDA")})
+            complex_results.append({"type": "VALUE", "res": value_analyzer.full_value_analysis("005930.KS")})
+            complex_results.append({"type": "VALUE", "res": value_analyzer.full_value_analysis("NVDA")})
             # 숏스퀴즈 (TSLA, GME 샘플)
-            complex_results.append({"type": "SQUEEZE", "res": squeeze_analyzer.calculate_squeeze_score("TSLA")})
-            # 파생상품 (선물 기반 레버리지 리스크 점검)
-            complex_results.append({"type": "DERIV", "res": deriv_analyzer.analyze_leverage_risk("TQQQ", leverage=3.0)})
+            complex_results.append({"type": "SQUEEZE", "res": squeeze_analyzer.analyze("TSLA")})
+            # 파생상품 (VIX 기준 레버리지 리스크 점검)
+            complex_results.append({"type": "DERIVATIVES", "res": deriv_analyzer.vix_analysis()})
         except Exception as e:
             print(f"[WARN] 복합 분석 런타임 오류: {e}")
 
@@ -601,129 +604,128 @@ class NotionReporter:
             "heading_2": {"rich_text": [{"type": "text", "text": {"content": "🧠 AI Analyst Insight"}, "annotations": {"color": "blue"}}]}
         })
 
-        # 가독성을 위해 빈 줄 생성 도우미 함수 
-        empty_line_block = {"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}
-
         if rag_text:
             lines = rag_text.split('\n')
+            paragraph_buffer = []
+            
+            def flush_paragraph():
+                if paragraph_buffer:
+                    full_text = "\n".join(paragraph_buffer)
+                    # 2000자 제한 (노션 한 개 블록 제한) 처리
+                    for chunk in [full_text[i:i+2000] for i in range(0, len(full_text), 2000)]:
+                        rich_text = []
+                        parts = chunk.split('**')
+                        for i, part in enumerate(parts):
+                            if i % 2 == 1:
+                                rich_text.append({"type": "text", "text": {"content": part}, "annotations": {"bold": True}})
+                            else:
+                                if part: rich_text.append({"type": "text", "text": {"content": part}})
+                        
+                        blocks.append({
+                            "object": "block",
+                            "type": "paragraph",
+                            "paragraph": {"rich_text": rich_text}
+                        })
+                    paragraph_buffer.clear()
+
             for line in lines:
                 line = line.strip()
                 if not line:
+                    flush_paragraph()
                     continue
                 
-                # 수평선 처리
-                if line.startswith('---'):
-                    blocks.append({"object": "block", "type": "divider", "divider": {}})
-                    blocks.append(empty_line_block.copy())
-                    continue
-                
-                # 헤딩 처리
-                if line.startswith('###'):
-                    blocks.append({
-                        "object": "block",
-                        "type": "heading_3",
-                        "heading_3": {"rich_text": [{"type": "text", "text": {"content": line.replace('#', '').strip()}}]}
-                    })
-                    continue
-                elif line.startswith('##'):
-                    blocks.append({
-                        "object": "block",
-                        "type": "heading_2",
-                        "heading_2": {"rich_text": [{"type": "text", "text": {"content": line.replace('#', '').strip()}}]}
-                    })
-                    continue
-
-                # 핵심 요약 (주황색 콜아웃 혹은 인용구)
-                if "[핵심 요약]" in line or "1줄 문장 요약" in line:
-                    clean_text = line.replace("[핵심 요약]", "").replace("1줄 문장 요약", "").strip()
-                    if clean_text.startswith(":") or clean_text.startswith("-"):
-                        clean_text = clean_text[1:].strip()
-                        
-                    blocks.append({
-                        "object": "block",
-                        "type": "quote",
-                        "quote": {
-                            "rich_text": [{"type": "text", "text": {"content": f"🎯 {clean_text}"}, "annotations": {"bold": True, "color": "purple"}}],
-                            "color": "purple_background"
-                        }
-                    })
-                    blocks.append(empty_line_block.copy())
-                    continue
-
-                if line.startswith('A.') or line.startswith('B.') or line.startswith('C.') or line.startswith('1.') or line.startswith('2.') or line.startswith('3.') or line.startswith('4.'):
-                    blocks.append(empty_line_block.copy())  # 번호 매기기, 알파벳 단락 위 빈 줄 추가
-                    blocks.append({
-                        "object": "block",
-                        "type": "heading_3",
-                        "heading_3": {"rich_text": [{"type": "text", "text": {"content": line}, "annotations": {"color": "blue", "bold": True}}]}
-                    })
-                    continue
-
-                # 리스트 아이템
-                if line.startswith('- ') or line.startswith('* '):
-                    # 볼드 파싱
-                    item_text = line[2:]
-                    rich_text = []
-                    parts = item_text.split('**')
-                    for i, part in enumerate(parts):
-                        if i % 2 == 1:
-                            rich_text.append({"type": "text", "text": {"content": part}, "annotations": {"bold": True}})
-                        else:
-                            if part: rich_text.append({"type": "text", "text": {"content": part}})
-
-                    blocks.append({
-                        "object": "block",
-                        "type": "bulleted_list_item",
-                        "bulleted_list_item": {"rich_text": rich_text}
-                    })
-                    blocks.append(empty_line_block.copy()) # 가독성 한줄 추가
-                    continue
-
-                # 기본 단락 (Paragraph) with Bold text parsing
-                rich_text = []
-                parts = line.split('**')
-                for i, part in enumerate(parts):
-                    if i % 2 == 1:
-                        rich_text.append({"type": "text", "text": {"content": part}, "annotations": {"bold": True}})
+                # 특수 블록(헤더, 리스트, 수평선) 처리 시 이전 단락 플러시
+                if any(line.startswith(prefix) for prefix in ['---', '###', '##', '# ', '- ', '* ', 'A.', '1.']):
+                    flush_paragraph()
+                    
+                    if line.startswith('---'):
+                        blocks.append({"object": "block", "type": "divider", "divider": {}})
+                    elif line.startswith('###'):
+                        blocks.append({"object": "block", "type": "heading_3", "heading_3": {"rich_text": [{"type": "text", "text": {"content": line.replace('#', '').strip()}}]}})
+                    elif line.startswith('##'):
+                        blocks.append({"object": "block", "type": "heading_2", "heading_2": {"rich_text": [{"type": "text", "text": {"content": line.replace('#', '').strip()}}]}})
+                    elif line.startswith('- ') or line.startswith('* '):
+                        item_text = line[2:]
+                        rich_text = []
+                        parts = item_text.split('**')
+                        for i, part in enumerate(parts):
+                            if i % 2 == 1: rich_text.append({"type": "text", "text": {"content": part}, "annotations": {"bold": True}})
+                            else: 
+                                if part: rich_text.append({"type": "text", "text": {"content": part}})
+                        blocks.append({"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": rich_text}})
                     else:
-                        if part: rich_text.append({"type": "text", "text": {"content": part}})
-                
-                blocks.append({
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {"rich_text": rich_text}
-                })
-                # 가독성을 위해 단락 하나당 빈줄 하나 추가
-                blocks.append(empty_line_block.copy())
+                        # 숫자나 알파벳 리스트는 강조된 헤딩으로 처리
+                        blocks.append({"object": "block", "type": "heading_3", "heading_3": {"rich_text": [{"type": "text", "text": {"content": line}, "annotations": {"color": "blue", "bold": True}}]}})
+                else:
+                    # 핵심 요약 처리
+                    if "[핵심 요약]" in line or "1줄 문장 요약" in line:
+                        flush_paragraph()
+                        clean_text = line.replace("[핵심 요약]", "").replace("1줄 문장 요약", "").strip()
+                        if clean_text.startswith(":") or clean_text.startswith("-"): clean_text = clean_text[1:].strip()
+                        blocks.append({
+                            "object": "block", "type": "quote",
+                            "quote": {"rich_text": [{"type": "text", "text": {"content": f"🎯 {clean_text}"}, "annotations": {"bold": True, "color": "purple"}}], "color": "purple_background"}
+                        })
+                    else:
+                        paragraph_buffer.append(line)
+            
+            flush_paragraph()
         else:
             blocks.append({
-                "object": "block",
-                "type": "callout",
-                "callout": {
-                    "rich_text": [{"type": "text", "text": {"content": "오늘 생성된 AI 브리핑 데이터가 없습니다. (RAG 파이프라인 미실행)"}}],
-                    "icon": {"emoji": "⚠️"}
-                }
+                "object": "block", "type": "callout",
+                "callout": {"rich_text": [{"type": "text", "text": {"content": "오늘 생성된 AI 브리핑 데이터가 없습니다."}}], "icon": {"emoji": "⚠️"}}
             })
 
-        # 3. 노션 하위 페이지 생성 API 호출 (데이터베이스 표 대신 자식 페이지로 직접 추가)
+        # 3. 노션 리포트 생성 (100개 블록 제한 대응)
         try:
-            print(f"[NotionReporter] Inserting report page under parent: {self.parent_page_id}")
+            if NOTION_DATABASE_ID:
+                parent_config = {"type": "database_id", "database_id": NOTION_DATABASE_ID.replace("-", "")}
+                vix_val = None
+                for res in complex_results:
+                    if res.get("type") == "DERIVATIVES":
+                        vix_val = res.get("res", {}).get("vix")
+                
+                properties = {
+                    "Name": {"title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) - {strat_mode}"}}]},
+                    "Report Date": {"date": {"start": today_str}},
+                    "Strategy": {"select": {"name": strat_mode}}
+                }
+                if vix_val: properties["VIX"] = {"number": vix_val}
+            else:
+                parent_config = {"type": "page_id", "page_id": self.parent_page_id}
+                properties = {"title": {"title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) - {strat_mode}"}}]}}
+
+            # 처음 100개 블록만 포함하여 페이지 생성
+            initial_children = blocks[:100]
+            remaining_children = blocks[100:]
+
+            print(f"[NotionReporter] Creating page with {len(initial_children)} blocks...")
             new_page = self.client.pages.create(
-                parent={"type": "page_id", "page_id": self.parent_page_id},
-                properties={
-                    "title": {
-                        "title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) - {strat_mode}"}}]
-                    }
-                },
-                children=blocks
+                parent=parent_config,
+                properties=properties,
+                children=initial_children
             )
-            print(f"[OK] [NotionReporter] Report Created: {new_page['url']}")
-            return new_page['url']
+            
+            # 남은 블록이 있다면 추가 전송 (100개씩 끊어서)
+            page_id = new_page["id"]
+            for i in range(0, len(remaining_children), 100):
+                chunk = remaining_children[i:i+100]
+                print(f"[NotionReporter] Appending {len(chunk)} more blocks...")
+                self.client.blocks.children.append(block_id=page_id, children=chunk)
+
+            print(f"[OK] [NotionReporter] Report Created: {new_page.get('url')}")
+            return new_page.get('url')
+
         except Exception as e:
-            print(f"[ERROR] [NotionReporter] Report Insertion Failed: {e}")
-            if hasattr(e, "body"):
-                print(f"상세 에러: {e.body}")
-            return None
+            print(f"[ERROR] [NotionReporter] Page Creation Failed: {e}")
+            # Fallback (최소한의 정보로 생성 시도)
+            try:
+                fallback_props = {"Name": {"title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) [Fallback]"}}]}} if NOTION_DATABASE_ID else {"title": {"title": [{"type": "text", "text": {"content": f"📊 Daily 브리핑 ({today_str}) [Fallback]"}}]}}
+                new_page = self.client.pages.create(parent=parent_config, properties=fallback_props)
+                self.client.blocks.children.append(block_id=new_page["id"], children=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": f"리포트 생성 중 오류가 발생하여 본문이 분리되었습니다. 에러: {str(e)[:500]}"}}]}}])
+                return new_page.get('url')
+            except:
+                return None
 
 if __name__ == "__main__":
     print("=== NotionReporter 수동 실행 ===")
