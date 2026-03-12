@@ -12,6 +12,9 @@ from config import NOTION_API_KEY, NOTION_PARENT_PAGE_ID, NOTION_DATABASE_ID
 from data_collectors.supabase_manager import SupabaseManager
 from analysis.pairs_trading import PairsTradingAnalyzer
 from analysis.event_swing import EventSwingAnalyzer
+from analysis.value_investing import ValueInvestingAnalyzer
+from analysis.short_squeeze import ShortSqueezeAnalyzer
+from analysis.derivatives import DerivativesAnalyzer
 
 class NotionReporter:
     def __init__(self):
@@ -139,8 +142,11 @@ class NotionReporter:
         # 신규 전략 모듈 즉시 수행 (브릿지)
         pairs_analyzer = PairsTradingAnalyzer()
         swing_analyzer = EventSwingAnalyzer()
+        value_analyzer = ValueInvestingAnalyzer()
+        squeeze_analyzer = ShortSqueezeAnalyzer()
+        deriv_analyzer = DerivativesAnalyzer()
         
-        # 관심 페어 분석
+        # 1. 관심 페어 분석
         pair_results = []
         try:
             pair_results.append(pairs_analyzer.analyze_pair("BTC-USD", "ETH-USD", "1y"))
@@ -148,13 +154,26 @@ class NotionReporter:
         except Exception as e:
             print(f"[WARN] 페어 분석 런타임 오류: {e}")
             
-        # 관심 이벤트 분석
+        # 2. 관심 이벤트 분석
         swing_results = []
         try:
             swing_results.append(swing_analyzer.analyze_event_swing_ev("005930.KS", "자사주 매입"))
             swing_results.append(swing_analyzer.analyze_event_swing_ev("086520.KQ", "대규모 유상증자"))
         except Exception as e:
             print(f"[WARN] 스윙 이벤트 분석 런타임 오류: {e}")
+
+        # 3. 밸류에이션 / 숏스퀴즈 / 파생상품 분석 (종합 점검)
+        complex_results = []
+        try:
+            # 가치투자 (삼전, NVDA 샘플)
+            complex_results.append({"type": "VALUE", "res": value_analyzer.analyze_intrinsic_value("005930.KS")})
+            complex_results.append({"type": "VALUE", "res": value_analyzer.analyze_intrinsic_value("NVDA")})
+            # 숏스퀴즈 (TSLA, GME 샘플)
+            complex_results.append({"type": "SQUEEZE", "res": squeeze_analyzer.calculate_squeeze_score("TSLA")})
+            # 파생상품 (선물 기반 레버리지 리스크 점검)
+            complex_results.append({"type": "DERIV", "res": deriv_analyzer.analyze_leverage_risk("TQQQ", leverage=3.0)})
+        except Exception as e:
+            print(f"[WARN] 복합 분석 런타임 오류: {e}")
 
         # 데이터 파싱 헬퍼 함수
         def get_macro(ticker, is_prev=False):
@@ -388,6 +407,80 @@ class NotionReporter:
                 "has_column_header": False,
                 "has_row_header": False,
                 "children": quant_strats_rows
+            }
+        })
+        
+        # 섹션 1.6: 복합 전략 (Value / Squeeze / Deriv)
+        blocks.append({
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {"rich_text": [{"type": "text", "text": {"content": "🧩 복합 퀀트 스캔 (Value, Squeeze, Derivatives)"}}]}
+        })
+        
+        complex_rows = []
+        for item in complex_results:
+            ctype = item['type']
+            r = item['res']
+            symbol = r.get('symbol') or r.get('ticker') or "-"
+            
+            if ctype == "VALUE":
+                safety = r.get('margin_of_safety', 0)
+                ev = r.get('expected_return_pct', 0)
+                complex_rows.append({
+                    "type": "table_row",
+                    "table_row": {
+                        "cells": [
+                            [{"type": "text", "text": {"content": "💎 가치투자"}}],
+                            [{"type": "text", "text": {"content": symbol}}],
+                            [{"type": "text", "text": {"content": f"안전마진: {safety:.1f}%"}}],
+                            [{"type": "text", "text": {"content": f"기대수익: {ev:.1f}%"}, "annotations": {"bold": True, "color": "blue" if ev > 0 else "red"}}],
+                            [{"type": "text", "text": {"content": r.get('fair_value_status', '-')}}],
+                            [{"type": "text", "text": {"content": "-"}}]
+                        ]
+                    }
+                })
+            elif ctype == "SQUEEZE":
+                score = r.get('squeeze_potential_score', 0)
+                complex_rows.append({
+                    "type": "table_row",
+                    "table_row": {
+                        "cells": [
+                            [{"type": "text", "text": {"content": "🚀 숏스퀴즈"}}],
+                            [{"type": "text", "text": {"content": symbol}}],
+                            [{"type": "text", "text": {"content": f"Score: {score}/100"}}],
+                            [{"type": "text", "text": {"content": r.get('squeeze_signal', 'HOLD'), "annotations": {"bold": True}}}],
+                            [{"type": "text", "text": {"content": f"공매도비율: {r.get('short_interest_ratio', 0):.1f}%"}}],
+                            [{"type": "text", "text": {"content": "-"}}]
+                        ]
+                    }
+                })
+            elif ctype == "DERIV":
+                var = r.get('risk_metrics', {}).get('var_95_pct', 0)
+                complex_rows.append({
+                    "type": "table_row",
+                    "table_row": {
+                        "cells": [
+                            [{"type": "text", "text": {"content": "⛓️ 파생/레버리지"}}],
+                            [{"type": "text", "text": {"content": symbol}}],
+                            [{"type": "text", "text": {"content": f"VaR(95): {var:.2f}%"}}],
+                            [{"type": "text", "text": {"content": f"결정: {r.get('recommendation', 'HOLD')}"}}],
+                            [{"type": "text", "text": {"content": f"리스크: {r.get('risk_level', '-')}"}}],
+                            [{"type": "text", "text": {"content": "-"}}]
+                        ]
+                    }
+                })
+        
+        if not complex_rows:
+            complex_rows.append({"type": "table_row", "table_row": {"cells": [[{"type": "text", "text": {"content": "복합 분석 결과 없음"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}], [{"type": "text", "text": {"content": "-"}}]]}})
+
+        blocks.append({
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": 6,
+                "has_column_header": False,
+                "has_row_header": False,
+                "children": complex_rows
             }
         })
         blocks.append({"object": "block", "type": "divider", "divider": {}})

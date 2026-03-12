@@ -1,7 +1,8 @@
 import os
 import json
 import requests
-import google.generativeai as genai
+import requests
+from google import genai
 from datetime import datetime
 from vector_store import VectorMemory
 from data_collectors.un_comtrade import UNComtradeCollector
@@ -11,8 +12,6 @@ from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY
 # ==========================================
 # CONFIGURATION
 # ==========================================
-# Configure Gemini API
-genai.configure(api_key=GEMINI_API_KEY)
 
 class QuantEngine:
     def __init__(self):
@@ -26,6 +25,7 @@ class QuantEngine:
         self.memory = VectorMemory()
         self.trade_collector = UNComtradeCollector()
         self.notion_reporter = NotionReporter()
+        self.ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
     def fetch_latest_market_data(self):
         """
@@ -138,8 +138,10 @@ class QuantEngine:
 {context_str}
 """
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content(prompt)
+            response = self.ai_client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt
+            )
             if not response.text:
                 raise ValueError("빈 응답 반환")
             return response.text
