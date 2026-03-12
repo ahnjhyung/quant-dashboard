@@ -38,6 +38,7 @@ jobs:
         NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
         NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
         NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        PYTHONPATH: .
       run: |
         python quant_engine.py
 
@@ -63,6 +64,7 @@ jobs:
         SMTP_USER: ${{ secrets.SMTP_USER }}
         SMTP_PASS: ${{ secrets.SMTP_PASS }}
         RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        PYTHONPATH: .
       run: |
         python auto_trading/email_reporter.py
         echo "✅ Daily email report sent at $(TZ='Asia/Seoul' date)"
@@ -90,6 +92,7 @@ jobs:
         SMTP_USER: ${{ secrets.SMTP_USER }}
         SMTP_PASS: ${{ secrets.SMTP_PASS }}
         RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        PYTHONPATH: .
       run: |
         python auto_trading/intraday_monitor.py
         echo "✅ Intraday scan completed at $(TZ='Asia/Seoul' date)"

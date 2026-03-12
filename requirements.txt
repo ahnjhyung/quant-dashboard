@@ -23,3 +23,5 @@ schedule>=1.2.0
 supabase>=2.3.0
 notion-client>=2.2.1
 google-generativeai>=0.3.0
+statsmodels>=0.14.0
+
