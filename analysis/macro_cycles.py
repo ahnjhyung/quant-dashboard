@@ -34,9 +34,10 @@ class MacroCycleAnalyzer:
             spy = self.db.get_macro_history("SPY", days=300)
             hyg = self.db.get_macro_history("HYG", days=100)
             lqd = self.db.get_macro_history("LQD", days=100)
+            t10y2y = self.db.get_macro_history("T10Y2Y", days=250)
 
             # 데이터 가용성 체크
-            if any(df is None or df.empty for df in [wti, unrate, cpi, spy, hyg, lqd]):
+            if any(df is None or df.empty for df in [wti, unrate, cpi, spy, hyg, lqd, t10y2y]):
                 logger.warning("일부 매크로 데이터가 DB에 없습니다. 데이터 수집기를 먼저 실행하세요.")
                 regime_info["details"].append("데이터 부족 (DB 미적재)")
                 return regime_info
@@ -79,24 +80,30 @@ class MacroCycleAnalyzer:
             curr_rr = _get_scalar(risk_ratio)
             ma50_rr = _get_scalar(risk_ratio.rolling(50).mean())
             is_risk_on = bool(curr_rr > ma50_rr) if ma50_rr > 0 else False
-
+            
+            # D. 금리차 리스크 (T10Y2Y)
+            t10_latest = _get_scalar(t10y2y['value'])
+            t10_min_250 = t10y2y['value'].min() 
+            is_inverted = bool(t10_latest < 0)
+            is_un_inverting = bool(t10_min_250 < -0.5 and t10_latest > -0.1) # 심한 역전 후 해소 중인 상태
+            
             # --- 국면 최종 판정 ---
-            if (oil_spike or is_high_inflation) and (not is_market_bull or is_unrate_rising):
+            if (oil_spike or is_high_inflation) and (not is_market_bull or is_unrate_rising or is_inverted):
                 regime_info["cycle_state"] = "STAGFLATION"
                 regime_info["weight_multiplier"] = 0.55
                 regime_info["details"].append(f"에너지/물가 쇼크 (Oil ${current_oil:.1f}, CPI {cpi_yoy:.1f}%)")
-            elif is_unrate_rising and not is_market_bull:
+            elif (is_unrate_rising or is_un_inverting) and not is_market_bull:
                 regime_info["cycle_state"] = "RECESSION"
-                regime_info["weight_multiplier"] = 0.45
-                regime_info["details"].append(f"경기 침체기 진입 가능성 (실업률 {latest_unrate}%)")
-            elif is_market_bull and is_risk_on and not is_high_inflation:
+                regime_info["weight_multiplier"] = 0.40 # 위험 가중치 강화
+                regime_info["details"].append(f"경기 침체기 진입/심화 (실업률 {latest_unrate}%, 금리차 {t10_latest:.2f})")
+            elif is_market_bull and is_risk_on and not is_high_inflation and not is_inverted:
                 regime_info["cycle_state"] = "GOLDILOCKS"
                 regime_info["weight_multiplier"] = 1.25
                 regime_info["details"].append("적정 성장 및 리스크 온 국면")
             else:
                 regime_info["cycle_state"] = "TRANSITION"
-                regime_info["weight_multiplier"] = 0.9
-                regime_info["details"].append("지표 혼조세 (관망)")
+                regime_info["weight_multiplier"] = 0.85
+                regime_info["details"].append("지표 혼조세 및 금리 역전 주의")
 
             regime_info["metrics"] = {
                 "oil_spike": oil_spike,

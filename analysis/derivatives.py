@@ -179,10 +179,10 @@ class DerivativesAnalyzer:
             pnl = np.where(prices > K, (prices - K - premium) * multiplier, -premium * multiplier)
         elif option_type == 'put_long':
             pnl = np.where(prices < K, (K - prices - premium) * multiplier, -premium * multiplier)
-        elif 'short' in option_type:
-            # [SECURITY] 숏포지션 금지 (사용자 요청 및 안전 원칙)
-            pnl = np.full(len(prices), -999999)  # 매우 큰 손실로 시뮬레이션하여 전략 채택 방지
-            print(f"⚠️ [WARNING] {option_type} is FORBIDDEN in this system (Long-Only Only).")
+        elif 'short' in option_type.lower() or '매도' in option_type:
+            # [SECURITY] 숏포지션 금지 (사용자 요청: 매도 포지션은 너무 위험하고 예탁금 부족)
+            pnl = np.full(len(prices), -premium * multiplier * 100) # 패널티 부여
+            print(f"🚨 [CRITICAL] {option_type} is FORBIDDEN. Only Long positions are allowed.")
         else:
             pnl = np.zeros(len(prices))
         
@@ -403,6 +403,80 @@ class DerivativesAnalyzer:
             'structure': structure,
             'signal': signal,
             'days_to_expiry': days_to_expiry,
+        }
+
+    def recommend_protective_put(self, ticker: str, spot_qty: int, spot_price: float) -> dict:
+        """
+        현물 보유 비중과 연동하여 최대 손실을 제한하는 최적의 풋 매수(Protective Put) 추천
+        """
+        try:
+            # 옵션 체인 정보 로드
+            chain_info = self.build_option_chain_summary(ticker)
+            if 'error' in chain_info:
+                return chain_info
+            
+            # 현재가 대비 -5% ~ -10% 외가격(OTM) 풋옵션 탐색
+            target_strike_min = spot_price * 0.90
+            target_strike_max = spot_price * 0.95
+            
+            puts = pd.DataFrame(chain_info['put_chain'])
+            # 행사가(strike)가 target 범위에 있는 것 중 거래량(oi)이 가장 많은 것 추천
+            candidates = puts[(puts['strike'] >= target_strike_min) & (puts['strike'] <= target_strike_max)]
+            
+            if candidates.empty:
+                # 범위 내 없으면 가장 가까운 OTM 풋 추천
+                candidates = puts[puts['strike'] < spot_price].sort_values(by='strike', ascending=False)
+            
+            if candidates.empty:
+                return {'error': '추천할 풋옵션 행사가를 찾을 수 없습니다.'}
+                
+            best_put = candidates.iloc[0]
+            premium = best_put['iv'] * 100 # 임시 프리미엄 계산 (실제는 ask/bid 사용 권장)
+            
+            return {
+                'ticker': ticker,
+                'strategy': 'PROTECTIVE_PUT',
+                'recommend_strike': best_put['strike'],
+                'cost_per_contract': premium,
+                'contracts_needed': math.ceil(spot_qty / 100),
+                'max_loss_limited_to': round(spot_price - best_put['strike'] + (premium/100), 2),
+                'description': f"주가 {best_put['strike']}원 이하 하락 시 손실 방어. 보험 성격의 매수 전략."
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    def get_vix_volatility_strategy(self) -> dict:
+        """
+        VIX 수준에 따른 매수 전용(Long-Only) 변동성 전략 추천
+        """
+        vix_data = self.vix_analysis()
+        if 'error' in vix_data:
+            return vix_data
+            
+        current_vix = vix_data['vix']
+        
+        # 전략 결정 로직
+        if current_vix < 15:
+            # 변동성 저점 -> 조만간 튈 가능성 (Long Call or Straddle Buy)
+            strategy = "LONG_CALL / STRADDLE_BUY"
+            reason = "VIX가 역사적 저점입니다. 저렴한 프리미엄으로 시장 상방 베팅 또는 변동성 확대에 베팅하기 좋은 시점입니다."
+            action = "ATM 콜옵션 매수 고려"
+        elif current_vix > 30:
+            # 변동성 고점 -> 패닉 구간 (Long Put은 비싸지만 추가 하락 방어 필요 시)
+            strategy = "LONG_PUT (HEDGE)"
+            reason = "VIX가 급등한 공포 국면입니다. 추가 폭락에 대비한 보험(풋 매수)이 필요할 수 있으나, 프리미엄이 비싸므로 소량 진입 권장."
+            action = "OTM 풋옵션 소량 매수 고려"
+        else:
+            strategy = "WAIT / TREND_FOLLOW"
+            reason = "정상 변동성 구간입니다. 특정 방향성 추세 확인 후 매수 진입을 권장합니다."
+            action = "관망 또는 섹터별 롱 전략"
+            
+        return {
+            'current_vix': current_vix,
+            'vix_level': vix_data['level'],
+            'recommended_strategy': strategy,
+            'reason': reason,
+            'action': action
         }
 
     def build_option_chain_summary(self, ticker: str) -> dict:
