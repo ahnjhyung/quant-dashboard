@@ -44,6 +44,7 @@ from hft_arb.fail_safe import FailSafeManager
 from hft_arb.market_discovery import MarketDiscovery
 from hft_arb.ws_feeds.binance_ws import BinanceFundingFeed, BinanceSpotOrderbookFeed
 from hft_arb.ws_feeds.upbit_ws import UpbitOrderbookFeed
+from hft_arb.ws_feeds.bithumb_ws import BithumbOrderbookFeed
 from hft_arb.ws_feeds.polymarket_feed import PolymarketFeed
 from hft_arb.ws_feeds.cross_platform_feed import CrossPlatformFeed
 
@@ -92,26 +93,82 @@ async def on_spot_data(data: dict, ev_engine: EVEngine) -> None:
 
 
 async def on_upbit_data(data: dict, ev_engine: EVEngine, executor: ArbExecutor, db_logger: AsyncLogger) -> None:
-    """Upbit 원화 오더북 수신 → 김치 프리미엄 EV 계산."""
-    binance_cache = ev_engine._binance_spot_cache.get("BTCUSDT")
-    if not binance_cache:
-        return  # Binance 가격 없으면 스킵
+    """Upbit 원화 오더북 수신 → 김치 프리미엄 및 Bithumb 크로스 차익 EV 계산."""
+    symbol = data["market"].split("-")[1]
+    
+    # 캐시 업데이트
+    ev_engine._upbit_cache[symbol] = data
 
-    signal = ev_engine.calc_kimchi_arb(
-        p_krw=data["best_ask_krw"],
-        p_usd=binance_cache["best_ask"],
-        quantity=round(6000 / data["best_ask_krw"], 5),
-    )
-    if signal:
-        pos_id = await executor.execute(signal)
-        if pos_id:
-            asyncio.create_task(db_logger.log({
-                "pos_id": pos_id,
-                "strategy": signal.strategy,
-                "symbol": signal.symbol,
-                "ev_pct": signal.ev_pct,
-                "details": signal.details,
-            }))
+    # 1. Binance vs Upbit Kimchi Premium 계산
+    binance_cache = ev_engine._binance_spot_cache.get(f"{symbol}USDT")
+    if binance_cache:
+        signal = ev_engine.calc_kimchi_arb(
+            p_krw=data["best_ask_krw"],
+            p_usd=binance_cache["best_ask"],
+            symbol=symbol,
+            quantity=round(6000 / data["best_ask_krw"], 5),
+        )
+        if signal:
+            pos_id = await executor.execute(signal)
+            if pos_id:
+                asyncio.create_task(db_logger.log({
+                    "pos_id": pos_id,
+                    "strategy": signal.strategy,
+                    "symbol": signal.symbol,
+                    "ev_pct": signal.ev_pct,
+                    "details": signal.details,
+                }))
+
+    # 2. Upbit vs Bithumb Cross Arbitrage 계산
+    bithumb_cache = getattr(ev_engine, "_bithumb_cache", {}).get(f"{symbol}_KRW")
+    if bithumb_cache:
+        cross_signal = ev_engine.calc_krw_cross_arb(
+            p_upbit=data["best_ask_krw"],
+            p_bithumb=bithumb_cache["best_ask_krw"],
+            symbol=symbol,
+            quantity=round(6000 / data["best_ask_krw"], 5),
+        )
+        if cross_signal:
+            pos_id = await executor.execute(cross_signal)
+            if pos_id:
+                asyncio.create_task(db_logger.log({
+                    "pos_id": pos_id,
+                    "strategy": cross_signal.strategy,
+                    "symbol": cross_signal.symbol,
+                    "ev_pct": cross_signal.ev_pct,
+                    "details": cross_signal.details,
+                }))
+
+
+async def on_bithumb_data(data: dict, ev_engine: EVEngine, executor: ArbExecutor, db_logger: AsyncLogger) -> None:
+    """Bithumb 원화 오더북 수신 → Upbit 크로스 차익 EV 계산."""
+    if not hasattr(ev_engine, "_bithumb_cache"):
+        ev_engine._bithumb_cache = {}
+        
+    symbol = data["market"].split("_")[0]
+    
+    # 캐시 업데이트
+    ev_engine._bithumb_cache[data["market"]] = data
+
+    # Upbit vs Bithumb Cross Arbitrage 계산
+    upbit_cache = ev_engine._upbit_cache.get(symbol)
+    if upbit_cache:
+        cross_signal = ev_engine.calc_krw_cross_arb(
+            p_upbit=upbit_cache["best_ask_krw"],
+            p_bithumb=data["best_ask_krw"],
+            symbol=symbol,
+            quantity=round(6000 / data["best_ask_krw"], 5),
+        )
+        if cross_signal:
+            pos_id = await executor.execute(cross_signal)
+            if pos_id:
+                asyncio.create_task(db_logger.log({
+                    "pos_id": pos_id,
+                    "strategy": cross_signal.strategy,
+                    "symbol": cross_signal.symbol,
+                    "ev_pct": cross_signal.ev_pct,
+                    "details": cross_signal.details,
+                }))
 
 
 async def on_polymarket_data(data: dict, ev_engine: EVEngine, executor: ArbExecutor, db_logger: AsyncLogger) -> None:
@@ -203,11 +260,17 @@ async def run_daemon() -> None:
         on_data=lambda d: on_upbit_data(d, ev_engine, executor, db_logger),
         fail_safe_fn=fail_safe_fn,
     )
+    bithumb_feed = BithumbOrderbookFeed(
+        market="BTC_KRW",
+        on_data=lambda d: on_bithumb_data(d, ev_engine, executor, db_logger),
+        fail_safe_fn=fail_safe_fn,
+    )
 
     tasks = [
         asyncio.create_task(funding_feed.connect(),                          name="funding_ws"),
         asyncio.create_task(spot_feed.connect(),                             name="spot_ws"),
         asyncio.create_task(upbit_feed.connect(),                            name="upbit_ws"),
+        asyncio.create_task(bithumb_feed.connect(),                          name="bithumb_ws"),
         asyncio.create_task(db_logger.run(),                                 name="db_logger"),
         asyncio.create_task(
             discovery.refresh_loop(on_market_update, interval_sec=3600),     name="market_refresh"
