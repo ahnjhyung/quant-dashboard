@@ -11,6 +11,8 @@ from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import datetime
 
 class SupabaseManager:
+    _macro_cache = {} # 전역 클래스 레벨 캐시 (모든 인스턴스 공유)
+    
     def __init__(self):
         if not SUPABASE_URL or not SUPABASE_KEY:
             self.client = None
@@ -187,29 +189,63 @@ class SupabaseManager:
 
     def get_macro_history(self, ticker: str, days: int = 400):
         """
-        특정 지표의 시계열 데이터를 Pandas DataFrame으로 반환
+        특정 지표의 시계열 데이터를 Pandas DataFrame으로 반환 (캐싱 지원)
         """
+        if ticker in self._macro_cache:
+            return self._macro_cache[ticker]
+            
         if not self.client:
             return None
             
         import pandas as pd
         try:
+            # 백테스트를 위해 충분한 양(최대 2000일)을 한 번에 가져와 캐싱
+            fetch_limit = max(days, 2000)
             response = self.client.table("macro_indicators")\
                 .select("date, value")\
                 .eq("ticker", ticker)\
                 .order("date", desc=True)\
-                .limit(days)\
+                .limit(fetch_limit)\
                 .execute()
             
             if response.data:
                 df = pd.DataFrame(response.data)
                 df['date'] = pd.to_datetime(df['date'])
                 df.set_index('date', inplace=True)
-                return df.sort_index()
+                df = df.sort_index()
+                self._macro_cache[ticker] = df # 캐시 저장
+                return df
             return pd.DataFrame()
         except Exception as e:
             print(f"[ERROR] [SupabaseManager] get_macro_history 에러: {e}")
             return None
+
+    def prefetch_macro_history(self, tickers: List[str], days: int = 2000):
+        """여러 지표의 데이터를 한 번에 가져와 캐싱 (네트워크 오버헤드 최소화)"""
+        if not self.client or not tickers:
+            return
+            
+        import pandas as pd
+        try:
+            # IN 필터를 사용하여 한 번에 쿼리
+            response = self.client.table("macro_indicators")\
+                .select("ticker, date, value")\
+                .in_("ticker", tickers)\
+                .order("date", desc=True)\
+                .limit(len(tickers) * days)\
+                .execute()
+            
+            if response.data:
+                full_df = pd.DataFrame(response.data)
+                for ticker in tickers:
+                    ticker_data = full_df[full_df['ticker'] == ticker].copy()
+                    if not ticker_data.empty:
+                        ticker_data['date'] = pd.to_datetime(ticker_data['date'])
+                        ticker_data.set_index('date', inplace=True)
+                        self._macro_cache[ticker] = ticker_data.sort_index()
+                print(f"[SupabaseManager] Prefetched {len(tickers)} tickers successfully.")
+        except Exception as e:
+            print(f"[ERROR] [SupabaseManager] prefetch_macro_history 에러: {e}")
 
     def get_recent_news_by_ticker(self, ticker: str, days: int = 7) -> List[Dict]:
         """특정 심볼과 관련된 최근 뉴스를 조회"""

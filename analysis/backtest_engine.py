@@ -17,28 +17,45 @@ class BacktestEngine:
     def __init__(
         self, 
         initial_capital: float = 10000.0,
-        slippage: float = 0.0005, # 0.05% (현실적 수치로 조정)
-        commission: float = 0.00015, # 0.015%
-        tax_rate: float = 0.0025, # 0.25%
-        reinvest: bool = True
+        base_slippage: float = 0.0005, # 0.05% (기본값)
+        commission: float = 0.00015,   # 0.015%
+        tax_rate: float = 0.0025,      # 0.25%
+        reinvest: bool = True,
+        max_volume_pct: float = 0.1    # 일평균 거래량의 10% 이상 체결 제한
     ):
         self.initial_capital = initial_capital
-        self.slippage = slippage
+        self.base_slippage = base_slippage
         self.commission = commission
         self.tax_rate = tax_rate
         self.reinvest = reinvest
+        self.max_volume_pct = max_volume_pct
         
         self.analyzer = TechnicalSwingAnalyzer(paper_trading=True)
         self.macro_analyzer = MacroCycleAnalyzer()
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger("BacktestEngine")
 
+    def _calc_dynamic_slippage(self, price: float, volume: float, amount: float) -> float:
+        """
+        거래량과 거래금액에 따른 가변 슬리피지 계산
+        - 거래량이 적을수록, 내 주문이 비중이 높을수록 슬리피지 증가
+        """
+        if volume <= 0: return self.base_slippage
+        
+        # 내 주문이 전일 거래량에서 차지하는 비중 (Impact Ratio)
+        impact = (amount / volume) * 100 
+        
+        # 기본 슬리피지에 임팩트 비용(비선형) 추가
+        # 예: 비중 1%당 0.1%p 슬리피지 증가
+        dynamic_slippage = self.base_slippage + (impact * 0.001)
+        return dynamic_slippage
+
     def _calc_entry_cost(self, effective_price: float, amount: float) -> float:
-        """진입 시 수수료 계산 (슬리피지는 이미 가격에 반영됨)"""
+        """진입 시 수수료 계산"""
         return effective_price * self.commission * amount
 
     def _calc_exit_cost(self, effective_price: float, amount: float) -> float:
-        """청산 시 수수료 + 세금 계산 (슬리피지는 이미 가격에 반영됨)"""
+        """청산 시 수수료 + 세금 계산"""
         comm_cost = effective_price * self.commission * amount
         tax_cost = effective_price * self.tax_rate * amount
         return comm_cost + tax_cost
@@ -75,104 +92,120 @@ class BacktestEngine:
         
         # 4. 루프 순회 (벡터화 대신 가독성을 위해 순차 순회)
         for i in range(20, len(df)):
+            # [CRITICAL] Look-ahead Bias 차단: T 시계열의 데이터만 사용
+            # 현재(i) 시점의 Close를 보려면, 매매 결정은 i-1 시점까지의 데이터(지표)에 근거해야 함
             curr = df.iloc[i]
-            prev = df.iloc[i-1]
-            price = curr['Close']
+            prev = df.iloc[i-1] # 결정 근거
+            
+            # 실제 체결가 결정 (슬리피지 반영)
+            # 여기서는 i 시점의 시가(Open) 또는 평균(High+Low)/2를 사용하는 것이 더 정교함(사용자 요청 반영)
+            execution_price = (curr['High'] + curr['Low']) / 2
             
             # 매수 로직 (TechnicalSwingAnalyzer 로직 이식 + SPY 필터)
             if position == 0:
                 is_buy = False
-                # 시장 필터: SPY가 200 SMA 위에 있을 때만 (단기 반등 제외, 안정적 추세 지향)
-                market_is_good = pd.isna(curr.get('spy_sma_200')) or curr['spy_close'] > curr['spy_sma_200']
+                # 시장 필터: T-1 시점의 데이터로 결정
+                market_is_good = pd.isna(prev.get('spy_sma_200')) or prev['spy_close'] > prev['spy_sma_200']
                 
                 if market_is_good:
-                    # 강세장 판정: 가격이 장기 이평선(EMA 200) 위에 있을 때
-                    is_bull_trend = price > curr['ema_200']
+                    # T-1 시점의 지표를 기준으로 진입 판단
+                    is_bull_trend = prev['Close'] > prev['ema_200']
                     
                     # Setup 1: Wave Ride (불마켓 눌림목)
-                    if is_bull_trend and price <= curr['bb_lower'] and curr['rsi'] < 40: # RSI 필터 강화 (45->40)
+                    if is_bull_trend and prev['Close'] <= prev['bb_lower'] and prev['rsi'] < 40:
                         is_buy = True
                     # Setup 2: Trend Following
-                    elif (curr['macd'] > curr['macd_signal'] and prev['macd'] <= prev['macd_signal'] and is_bull_trend and curr['rsi'] < 60):
+                    elif (prev['macd'] > prev['macd_signal'] and df.iloc[i-2]['macd'] <= df.iloc[i-2]['macd_signal'] 
+                          and is_bull_trend and prev['rsi'] < 60):
                         is_buy = True
                     
                 if is_buy:
-                    # 1. 슬리피지가 반영된 실질 진입가 계산
-                    effective_entry_price = price * (1 + self.slippage)
-                    # 2. 수수료를 제외하고 살 수 있는 최대 수량 계산
-                    # capital = (effective_entry_price * position) + (effective_entry_price * position * commission)
-                    # capital = effective_entry_price * position * (1 + commission)
-                    position = capital / (effective_entry_price * (1 + self.commission))
-                    capital = 0 # 전량 매수
+                    # 거래량 기반 체결 가능성 검토 (T-1 거래량의 일정 수준 이하만)
+                    max_sharable_amount = prev['Volume'] * self.max_volume_pct
                     
-                    entry_price = price
-                    atr = curr['atr']
-                    # 익절은 무제한(TS), 초기 손절은 ATR 2배로 널널하게
-                    tp = price * 2.0 
-                    sl = price - (atr * 2.0)
-                    highest_price = price 
+                    # 1. 가변 슬리피지 계산
+                    # 진입 수량 예측 (러프하게 자본금/가격)
+                    estimated_amount = capital / execution_price
+                    actual_slippage = self._calc_dynamic_slippage(execution_price, prev['Volume'], estimated_amount)
+                    
+                    effective_entry_price = execution_price * (1 + actual_slippage)
+                    
+                    # 실질 수량 (수수료 포함)
+                    buyable_position = capital / (effective_entry_price * (1 + self.commission))
+                    
+                    # 체결 제한 적용
+                    position = min(buyable_position, max_sharable_amount)
+                    capital -= position * effective_entry_price * (1 + self.commission)
+                    
+                    entry_price = execution_price
+                    atr = prev['atr']
+                    # 익절은 무제한(TS), 초기 손절은 ATR 2배
+                    tp = entry_price * 2.0 
+                    sl = entry_price - (atr * 2.0)
+                    highest_price = entry_price 
                     trades.append({
                         "entry_date": df.index[i],
                         "entry_price": entry_price,
                         "tp": tp,
                         "sl": sl,
                         "type": "BUY",
-                        "partial_exit": False # Cash-Flow 50% 익절 여부
+                        "partial_exit": False
                     })
             
-            # 매도 로직 (익절/손절 + 확장형 트레일링 스탑)
+            # 매도 로직
             elif position > 0:
                 trade = trades[-1]
                 is_exit = False
                 exit_reason = ""
                 
-                profit_pct = (price / entry_price - 1) * 100
-                
-                # 최고가 갱신 및 확장형 트레일링 스탑 업데이트
-                if price > highest_price:
-                    highest_price = price
-                    # 메가 추세를 타기 위해 수익권에 진입(10% 이상)하면 TS를 ATR 6배로 대폭 확대
-                    if profit_pct > 10.0:
-                        mult = 6.0
-                    elif profit_pct > 3.0:
-                        mult = 3.0
-                    else:
-                        mult = 1.5
+                # T-1 시점까지의 최고가 기반 TS 업데이트 (Look-ahead 방지)
+                if prev['Close'] > highest_price:
+                    highest_price = prev['Close']
+                    profit_at_prev = (highest_price / entry_price - 1) * 100
+                    
+                    if profit_at_prev > 10.0: mult = 6.0
+                    elif profit_at_prev > 3.0: mult = 3.0
+                    else: mult = 1.5
                         
-                    new_sl = highest_price - (curr['atr'] * mult)
+                    new_sl = highest_price - (prev['atr'] * mult)
                     trade['sl'] = max(trade['sl'], new_sl)
                 
-                # [NEW] Cash-Flow 50% 분할 익절 로직
+                # 실시간 가격(i 시점) 모니터링
+                current_price = execution_price
+                profit_pct = (current_price / entry_price - 1) * 100
+                
+                # 분할 익절 로직
                 if not trade['partial_exit'] and profit_pct >= 5.0:
-                    effective_exit_price = price * (1 - self.slippage)
+                    actual_slippage = self._calc_dynamic_slippage(current_price, prev['Volume'], position * 0.5)
+                    effective_exit_price = current_price * (1 - actual_slippage)
+                    
                     exit_revenue = (position * 0.5) * effective_exit_price
                     exit_cost = self._calc_exit_cost(effective_exit_price, position * 0.5)
                     
-                    plus_flow = exit_revenue - exit_cost
-                    capital += plus_flow
+                    capital += (exit_revenue - exit_cost)
                     position *= 0.5
                     trade['partial_exit'] = True
-                    self.logger.info(f"Partial Exit (50%) at {price} ({profit_pct:.2f}%) -> Cash: {plus_flow:.2f}")
                 
-                # 강제 익절 (파동의 끝이라고 판단될 때)
-                if price >= trade['tp']:
+                # 청산 조건 체크
+                if current_price >= trade['tp']:
                     is_exit = True
                     exit_reason = "TP"
-                # 손절 또는 트레일링 스탑 이탈
-                elif price <= trade['sl']:
+                elif current_price <= trade['sl']:
                     is_exit = True
                     exit_reason = "SL/TS"
                     
                 if is_exit:
-                    effective_exit_price = price * (1 - self.slippage)
+                    actual_slippage = self._calc_dynamic_slippage(current_price, prev['Volume'], position)
+                    effective_exit_price = current_price * (1 - actual_slippage)
+                    
                     exit_revenue = position * effective_exit_price
                     exit_cost = self._calc_exit_cost(effective_exit_price, position)
                     capital += (exit_revenue - exit_cost)
                     
                     trade.update({
                         "exit_date": df.index[i],
-                        "exit_price": price,
-                        "profit_pct": (capital / (position * entry_price) - 1) * 100 if position > 0 else 0,
+                        "exit_price": current_price,
+                        "profit_pct": (capital / self.initial_capital - 1) * 100 if not self.reinvest else 0, # 단순화
                         "reason": exit_reason
                     })
                     position = 0

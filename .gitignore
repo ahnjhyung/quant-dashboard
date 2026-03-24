@@ -1,4 +1,4 @@
-﻿# Environments
+# Environments
 .env
 .venv
 env/
@@ -31,6 +31,28 @@ Thumbs.db
 "각종 키 및 보안.txt"
 *.txt
 .env
+
+# Large Binary Files and Archives (Slows down Git)
+*.zip
+*.tar.gz
+*.7z
+
+# Temporary Test Scripts (Keep project clean)
+test_*.py
+explore_*.py
+check_*.py
+*live_ping_*.py
+verify_*.py
+
+# Performance Optimization
+*.jsonl
+*.csv
+*.xlsx
+hft_arb/logs/*.json
+hft_arb/logs/*.jsonl
+hft_arb/logs/state_snapshot.json
+!hft_arb/**/*.py
+!hft_arb/**/__init__.py
 
 # Trading Signals
 auto_trading/signals/
