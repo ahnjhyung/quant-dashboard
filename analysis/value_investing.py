@@ -301,22 +301,29 @@ class ValueInvestingAnalyzer:
                 info = stock.info
                 
                 # 이익수익률 = EBIT / Enterprise Value (PER의 역수 개념)
-                ebit = info.get('ebitda', 0) or 0  # EBITDA proxy
-                ev = info.get('enterpriseValue', 1) or 1
-                earnings_yield = ebit / ev if ev else 0
+                ebit = info.get('ebitda')
+                if ebit is None:
+                    # JPM과 같은 금융주는 EBITDA 및 EV가 제공되지 않으므로 PER의 역수를 대용치로 사용
+                    per_val = info.get('trailingPE') or info.get('forwardPE') or 0
+                    earnings_yield = (1 / per_val) if per_val > 0 else 0
+                    ebit = 0
+                    ev = 0
+                else:
+                    ev = info.get('enterpriseValue', 1) or 1
+                    earnings_yield = ebit / ev if ev else 0
                 
-                # 자본수익률 = EBIT / (순고정자산 + 순운전자본) proxy
-                total_assets = info.get('totalAssets', 1) or 1
-                total_debt = info.get('totalDebt', 0) or 0
-                roc = ebit / max(total_assets - total_debt, 1)
+                # 자본수익률(ROC) = EBIT / (순고정자산 + 순운전자본)
+                # yfinance에서 totalAssets가 누락되는 경우가 많아 거대한 값이 나오는 버그가 있음.
+                # 이를 방지하기 위해 ROA(총자산이익률)로 대체하여 안정적으로 계산합니다.
+                roc = info.get('returnOnAssets', 0) or 0
                 
                 results.append({
                     'ticker': ticker,
-                    'earnings_yield': earnings_yield,
-                    'roc': roc,
-                    'per': info.get('trailingPE', 0),
-                    'pbr': info.get('priceToBook', 0),
-                    'roe': (info.get('returnOnEquity', 0) or 0) * 100,
+                    'earnings_yield': round(earnings_yield * 100, 2),  # 퍼센트로 변환
+                    'roc': round(roc * 100, 2),                        # 퍼센트로 변환
+                    'per': round(info.get('trailingPE', 0) or 0, 2),
+                    'pbr': round(info.get('priceToBook', 0) or 0, 2),
+                    'roe': round((info.get('returnOnEquity', 0) or 0) * 100, 2),
                     'market_cap': info.get('marketCap', 0),
                     'ebit': ebit,
                     'enterprise_value': ev,
@@ -397,56 +404,173 @@ class ValueInvestingAnalyzer:
 
     def value_screen(self, tickers: list) -> list:
         """
-        간단한 가치주 스크리닝
-        - PER < 15 (이익 대비 저평가)
-        - PBR < 1.5 (자산 대비 저평가)
-        - ROE > 15% (수익성 양호)
-        - 부채비율 < 100%
-        
+        가치투자 종합 스크리닝 (100점 만점 가중치 연속 스코어)
+
+        핵심 지표별 가중치 배분:
+        - ROE (수익성) : 30% (가장 중요)
+        - PER (수익가치) : 25% (이익 대비 저평가)
+        - PBR (자산가치) : 20% (자산 대비 저평가)
+        - D/E (재무건전성): 15% (안전성)
+        - 배당률 (인컴) : 10% (현금흐름)
+
         Returns:
-            통과한 종목 리스트 (score 기준 정렬)
+            종목 리스트 (score 기준 내림차순 정렬)
         """
-        results = []
+        raw_data = []
         for ticker in tickers:
             try:
                 stock = yf.Ticker(ticker)
                 info = stock.info
-                
-                per = info.get('trailingPE', 9999) or 9999
-                pbr = info.get('priceToBook', 9999) or 9999
-                roe = (info.get('returnOnEquity', 0) or 0) * 100
-                debt_to_equity = info.get('debtToEquity', 9999) or 9999
-                dividend_yield = (info.get('dividendYield', 0) or 0) * 100
-                
-                # 스크리닝 조건
-                checks = {
-                    'per_ok': 0 < per < 15,
-                    'pbr_ok': 0 < pbr < 1.5,
-                    'roe_ok': roe > 15,
-                    'debt_ok': debt_to_equity < 100,
-                }
-                
-                score = sum(checks.values())
-                
-                results.append({
+
+                per = info.get('trailingPE') or info.get('forwardPE')
+                pbr = info.get('priceToBook')
+                roe = info.get('returnOnEquity')
+                debt_to_equity = info.get('debtToEquity')
+                dividend_yield = info.get('dividendYield')
+
+                raw_data.append({
                     'ticker': ticker,
-                    'score': score,
-                    'per': round(per, 1) if per < 9999 else None,
-                    'pbr': round(pbr, 2) if pbr < 9999 else None,
-                    'roe': round(roe, 1),
-                    'debt_to_equity': round(debt_to_equity, 1) if debt_to_equity < 9999 else None,
-                    'dividend_yield': round(dividend_yield, 2),
-                    'checks': checks,
-                    'all_pass': score == 4,
+                    'per': per if per and per > 0 else None,
+                    'pbr': pbr if pbr and pbr > 0 else None,
+                    'roe': (roe * 100) if roe else None,
+                    'debt_to_equity': debt_to_equity if debt_to_equity is not None else None,
+                    'dividend_yield': (dividend_yield * 100) if dividend_yield else 0.0,
                     'market_cap': info.get('marketCap', 0),
                     'name': info.get('longName', ticker),
                     'sector': info.get('sector', ''),
+                    'current_price': info.get('currentPrice', 0),
+                    'target_price': info.get('targetMeanPrice', 0),
                 })
             except Exception as e:
                 print(f"⚠️ 스크리닝 에러 [{ticker}]: {e}")
-        
-        return sorted(results, key=lambda x: -x['score'])
 
+        if not raw_data:
+            return []
+
+        # ── 가중치 기반 스코어 계산 (합계 100점) ──
+        results = []
+        for item in raw_data:
+            scores = {}
+            breakdown = {}
+
+            # 1) PER 점수 (25점 만점, 수익가치)
+            per = item['per']
+            if per and 0 < per < 200:
+                if per <= 10:
+                    scores['per'] = 25
+                elif per <= 15:
+                    scores['per'] = 25 - (per - 10) * 2  # 15~25점
+                elif per <= 25:
+                    scores['per'] = 15 - (per - 15) * 1  # 5~15점
+                elif per <= 60:
+                    scores['per'] = max(0, 5 - (per - 25) * 0.14)
+                else:
+                    scores['per'] = 0
+                breakdown['PER'] = f"{per:.1f} → {scores['per']:.1f}/25점"
+            else:
+                scores['per'] = 0
+                breakdown['PER'] = "N/A → 0/25점"
+
+            # 2) PBR 점수 (20점 만점, 자산가치)
+            pbr = item['pbr']
+            if pbr and 0 < pbr < 100:
+                if pbr <= 1.0:
+                    scores['pbr'] = 20
+                elif pbr <= 1.5:
+                    scores['pbr'] = 20 - (pbr - 1.0) * 10  # 15~20점
+                elif pbr <= 3.0:
+                    scores['pbr'] = 15 - (pbr - 1.5) * 6  # 6~15점
+                elif pbr <= 10.0:
+                    scores['pbr'] = max(0, 6 - (pbr - 3.0) * 0.86)
+                else:
+                    scores['pbr'] = 0
+                breakdown['PBR'] = f"{pbr:.2f} → {scores['pbr']:.1f}/20점"
+            else:
+                scores['pbr'] = 0
+                breakdown['PBR'] = "N/A → 0/20점"
+
+            # 3) ROE 점수 (30점 만점, 수익성)
+            roe = item['roe']
+            if roe is not None:
+                if roe >= 25:
+                    scores['roe'] = 30
+                elif roe >= 15:
+                    scores['roe'] = 20 + (roe - 15) * 1.0  # 20~30점
+                elif roe >= 8:
+                    scores['roe'] = 10 + (roe - 8) * 1.42  # 10~20점
+                elif roe >= 0:
+                    scores['roe'] = roe * 1.25  # 0~10점
+                else:
+                    scores['roe'] = 0
+                breakdown['ROE'] = f"{roe:.1f}% → {scores['roe']:.1f}/30점"
+            else:
+                scores['roe'] = 0
+                breakdown['ROE'] = "N/A → 0/30점"
+
+            # 4) 재무건전성 (15점 만점, 안전성)
+            de = item['debt_to_equity']
+            if de is not None and de >= 0:
+                if de <= 30:
+                    scores['debt'] = 15
+                elif de <= 50:
+                    scores['debt'] = 15 - (de - 30) * 0.25  # 10~15점
+                elif de <= 100:
+                    scores['debt'] = 10 - (de - 50) * 0.12  # 4~10점
+                elif de <= 200:
+                    scores['debt'] = max(0, 4 - (de - 100) * 0.04)
+                else:
+                    scores['debt'] = 0
+                breakdown['D/E'] = f"{de:.1f}% → {scores['debt']:.1f}/15점"
+            else:
+                scores['debt'] = 5  # 데이터 없으면 중립
+                breakdown['D/E'] = "N/A → 5/15점(중립)"
+
+            # 5) 배당 점수 (10점 만점, 현금흐름)
+            div = item['dividend_yield']
+            if div > 0:
+                if div >= 4.0:
+                    scores['dividend'] = 10
+                elif div >= 2.0:
+                    scores['dividend'] = 6 + (div - 2.0) * 2  # 6~10점
+                elif div >= 1.0:
+                    scores['dividend'] = 3 + (div - 1.0) * 3  # 3~6점
+                else:
+                    scores['dividend'] = div * 3  # 0~3점
+                breakdown['배당'] = f"{div:.2f}% → {scores['dividend']:.1f}/10점"
+            else:
+                scores['dividend'] = 0
+                breakdown['배당'] = "0% → 0/10점"
+
+            total_score = round(sum(scores.values()), 1)
+
+            # 등급 부여
+            if total_score >= 80:
+                grade = "S"
+            elif total_score >= 65:
+                grade = "A"
+            elif total_score >= 50:
+                grade = "B"
+            elif total_score >= 35:
+                grade = "C"
+            else:
+                grade = "D"
+
+            results.append({
+                'ticker': item['ticker'],
+                'name': item['name'],
+                'score': total_score,
+                'grade': grade,
+                'per': round(per, 1) if per and per < 9999 else None,
+                'pbr': round(pbr, 2) if pbr and pbr < 9999 else None,
+                'roe': round(roe, 1) if roe is not None else None,
+                'debt_to_equity': round(de, 1) if de is not None else None,
+                'dividend_yield': round(div, 2),
+                'sector': item['sector'],
+                'breakdown': breakdown,
+                'scores_detail': scores,
+            })
+
+        return sorted(results, key=lambda x: -x['score'])
 
 # ==========================================
 # STANDALONE TEST

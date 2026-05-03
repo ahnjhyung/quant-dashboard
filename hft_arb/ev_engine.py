@@ -33,7 +33,7 @@ KIMCHI_THRESHOLDS: dict[str, float] = {
     "SOL": 0.0120,    # 1.20% — 낮은 유동성
 }
 
-POLYMARKET_GAP_THRESHOLD = 0.0300     # 3.00% (S <= 0.97)
+POLYMARKET_GAP_THRESHOLD = 0.0030     # 0.30% (S <= 0.997)
 
 # ──────────────────────────────────────────
 # 수수료 파라미터 (보수적 추정)
@@ -87,8 +87,11 @@ class EVEngine:
         fx_rate_krw: USD/KRW 초기 환율 (fx_feed.py가 실시간 갱신)
     """
 
-    def __init__(self, position_size_usd: float = 10000.0, fx_rate_krw: float = 1445.0):
-        self.position_size_usd = position_size_usd
+    def __init__(self, total_capital_usd: float = 100.0, fx_rate_krw: float = 1445.0):
+        self.total_capital_usd = total_capital_usd
+        # 공격적 베팅: 전체 자본금의 70% (User requested 70%)
+        self.position_size_ratio = 0.70
+        self.position_size_usd = self.total_capital_usd * self.position_size_ratio
         self.fx_rate_krw = fx_rate_krw
 
         # In-memory 최신 데이터 캐시
@@ -106,13 +109,14 @@ class EVEngine:
         dtype = data.get("type")
 
         if dtype == "polymarket_gap":
+            token_ids = data.get("token_ids")
             self._poly_cache[data["condition_id"]] = {
                 "p_yes": data["p_yes"],
                 "p_no": data["p_no"],
-                "token_ids": data["token_ids"]
+                "token_ids": token_ids
             }
             sig = self.calc_polymarket_arb(
-                data["condition_id"], data["p_yes"], data["p_no"], data["token_ids"]
+                data["condition_id"], data["p_yes"], data["p_no"], token_ids
             )
             ext_id = self.mapper.get_cross_platform_id(data["condition_id"])
             if ext_id and ext_id in self._external_cache:
@@ -187,7 +191,6 @@ class EVEngine:
         p_krw: float,
         p_usd: float,
         symbol: str = "BTC",
-        quantity: float = 0.01,
     ) -> ArbitrageSignal | None:
         """
         김치 프리미엄 차익 EV 계산 (BTC/ETH/SOL 멀티코인 지원).
@@ -219,6 +222,12 @@ class EVEngine:
         if kp < threshold:
             return None
 
+        # 70% 타겟 사이즈에 맞춘 수량 자동 계산
+        target_krw = self.position_size_usd * fx
+        quantity = target_krw / p_krw
+
+        # 김프가 양수(+)일 때는 바이낸스에서 사서 업비트에서 파는 차익을 계산해야 함.
+        # 즉 1 BTC당 차익 = (업비트 매도가 - 바이낸스 매수가)
         gross_usd = (p_krw_in_usd - p_usd) * quantity
         N = p_usd * quantity
 
@@ -231,15 +240,18 @@ class EVEngine:
             + N * FEE_BINANCE_TAKER_SPOT
             + N * FEE_SLIPPAGE_SPOT
             + N * FEE_FX_SPREAD
-            + FEE_BTC_NETWORK_USD
+            # + FEE_BTC_NETWORK_USD  # 10달러 소액 테스트 중이므로 $5 고정 수수료 무시
         )
         ev = gross_usd - c_total
         ev_pct = (ev / N) * 100
 
-        logger.info(
-            f"[EV:Kimchi:{symbol}] KP={kp:.4%} threshold={threshold:.4%} | "
-            f"EV=${ev:.2f} ({ev_pct:.4f}%) FX={fx:.1f}"
-        )
+        if ev > 0:
+            logger.info(
+                f"[EV:Kimchi:{symbol}] KP={kp:.4%} threshold={threshold:.4%} | "
+                f"EV=${ev:.2f} ({ev_pct:.4f}%) FX={fx:.1f}"
+            )
+        else:
+            logger.debug(f"[EV:Kimchi:{symbol}] Negative EV: ${ev:.2f}")
 
         return ArbitrageSignal(
             strategy="kimchi_arb",
@@ -290,9 +302,33 @@ class EVEngine:
         if gap < POLYMARKET_GAP_THRESHOLD:
             return None
 
-        N = self.position_size_usd
+        # Half-Kelly 계산
+        # 무위험 양방향 매수이므로 이론상 승률 100%. 단, 레그 리스크 1% 가정
+        P = 0.99 
+        Q = 0.01
+
+        # N=1 베팅 시의 예상 수익률 G (가스비 미포함 순수 수익비율)
+        cost_ratio = 2 * (FEE_POLY_TAKER + FEE_SLIPPAGE_POLY)
+        G = gap - cost_ratio 
+
+        if G <= 0:
+            return None # 순수익이 음수면 진입 불가
+
+        kelly_full = (P * G - Q) / G if G > 0 else 0
+        kelly_full = max(0.01, min(kelly_full, 1.0)) # 클램핑
+        
+        # Half Kelly
+        kelly_half = kelly_full * 0.5
+
+        # 가용 자본 정보가 없으면 기본값(self.position_size_usd) 사용. 추후 clob_executor 잔량 연동
+        available_cap = getattr(self, "current_balance_usd", 100.0) 
+        N = available_cap * kelly_half
+
+        # 하한선 및 상한선
+        N = max(10.0, min(N, available_cap * 0.3)) # 최대 30%까지만
+
         gross = gap * N
-        c_total = N * 2 * (FEE_POLY_TAKER + FEE_SLIPPAGE_POLY)
+        c_total = N * cost_ratio
         ev = gross - c_total
         ev_pct = (ev / N) * 100 if N > 0 else 0.0
 
@@ -335,7 +371,6 @@ class EVEngine:
         p_upbit: float,
         p_bithumb: float,
         symbol: str = "BTC",
-        quantity: float = 0.01,
     ) -> ArbitrageSignal | None:
         """
         업비트↔빗썸 KRW 크로스 차익 EV 계산.
@@ -371,6 +406,10 @@ class EVEngine:
         if spread_pct < KRW_CROSS_THRESHOLD:
             return None  # 임계점 미달
 
+        # 70% 타겟 사이즈에 맞춘 수량 자동 계산
+        target_krw_pos = self.position_size_usd * self.fx_rate_krw
+        quantity = target_krw_pos / p_avg
+
         gross_krw = (p_high - p_low) * quantity
         N_krw = p_avg * quantity
 
@@ -392,11 +431,14 @@ class EVEngine:
         else:
             direction = "빗썸매수→업비트매도"
 
-        logger.info(
-            f"[EV:KRW_Cross:{symbol}] spread={spread_pct:.4%} "
-            f"임계={KRW_CROSS_THRESHOLD:.4%} | "
-            f"EV={ev_krw:,.0f}원 ({ev_pct:.4f}%) | {direction}"
-        )
+        if ev_krw > 0:
+            logger.info(
+                f"[EV:KRW_Cross:{symbol}] spread={spread_pct:.4%} "
+                f"임계={KRW_CROSS_THRESHOLD:.4%} | "
+                f"EV={ev_krw:,.0f}원 ({ev_pct:.4f}%) | {direction}"
+            )
+        else:
+            logger.debug(f"[EV:KRW_Cross:{symbol}] Negative EV: {ev_krw:,.0f}원")
 
         return ArbitrageSignal(
             strategy="krw_cross_arb",
@@ -409,6 +451,7 @@ class EVEngine:
                 "p_bithumb": p_bithumb,
                 "spread_pct": spread_pct * 100,
                 "threshold_pct": KRW_CROSS_THRESHOLD * 100,
+                "order_krw": N_krw,
                 "gross_krw": gross_krw,
                 "cost_krw": c_total_krw,
                 "ev_krw": ev_krw,

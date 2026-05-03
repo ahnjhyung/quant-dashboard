@@ -60,6 +60,10 @@ UPBIT_SECRET_KEY = os.getenv("UPBIT_SECRET_KEY", "")
 BITHUMB_ACCESS_KEY = os.getenv("BITHUMB_ACCESS_KEY", "")
 BITHUMB_SECRET_KEY = os.getenv("BITHUMB_SECRET_KEY", "")
 
+# ── Polymarket (L2 CLOB) ──────────────
+POLYMARKET_ADDRESS = os.getenv("POLYMARKET_ADDRESS", "")
+POLYMARKET_PRIVATE_KEY = os.getenv("POLYMARKET_PRIVATE_KEY", "")
+
 # ── 이메일 알림 알리미 ───────────────
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
@@ -83,6 +87,7 @@ def check_config() -> dict:
         'kis': bool(KIS_APP_KEY and KIS_APP_SECRET),
         'upbit': bool(UPBIT_ACCESS_KEY and UPBIT_SECRET_KEY),
         'bithumb': bool(BITHUMB_ACCESS_KEY and BITHUMB_SECRET_KEY),
+        'polymarket': bool(POLYMARKET_ADDRESS and POLYMARKET_PRIVATE_KEY),
         'email': bool(SMTP_USER and SMTP_PASS and RECIPIENT_EMAIL),
     }
 

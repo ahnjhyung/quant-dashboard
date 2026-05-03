@@ -60,9 +60,12 @@ class CrossPlatformFeed:
                             games(first: 20, where: { status: Created }, orderBy: startsAt) {
                                 id
                                 title
-                                outcomes {
-                                    outcomeId
-                                    currentOdds
+                                conditions {
+                                    id
+                                    outcomes {
+                                        outcomeId
+                                        currentOdds
+                                    }
                                 }
                             }
                         }
@@ -78,31 +81,33 @@ class CrossPlatformFeed:
 
     async def _process_result(self, result: dict) -> None:
         """결과 파싱 및 콜백 전송."""
-        # Azuro v3 스키마 기준 예시
+        # Azuro v3 스키마 기준: games -> conditions -> outcomes
         games = result.get("games", [])
         for game in games:
             game_id = game["id"]
             title = game["title"]
-            outcomes = game.get("outcomes", [])
+            conditions = game.get("conditions", [])
             
-            # 배당률(Odds)을 확률(Probability)로 변환 (P = 1/Odds)
-            # 수수료(Margin)가 포함되어 있어 S > 1.0일 가능성 높음
-            prices = {}
-            for oc in outcomes:
-                oid = oc["outcomeId"]
-                odds = float(oc["currentOdds"])
-                if odds > 0:
-                    prices[oid] = 1.0 / odds
-            
-            if prices:
-                await self.on_data({
-                    "type": "external_price",
-                    "platform": self.platform,
-                    "external_id": game_id,
-                    "title": title,
-                    "prices": prices,
-                    "ts": time.time(),
-                })
+            for cond in conditions:
+                outcomes = cond.get("outcomes", [])
+                
+                # 배당률(Odds)을 확률(Probability)로 변환 (P = 1/Odds)
+                prices = {}
+                for oc in outcomes:
+                    oid = oc["outcomeId"]
+                    odds = float(oc["currentOdds"])
+                    if odds > 0:
+                        prices[oid] = 1.0 / odds
+                
+                if prices:
+                    await self.on_data({
+                        "type": "external_price",
+                        "platform": self.platform,
+                        "external_id": f"{game_id}_{cond['id']}",
+                        "title": title,
+                        "prices": prices,
+                        "ts": time.time(),
+                    })
 
     def stop(self) -> None:
         self._running = False

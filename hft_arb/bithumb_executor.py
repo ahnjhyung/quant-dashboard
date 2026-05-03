@@ -310,7 +310,7 @@ class BithumbExecutor:
                 "market": f"KRW-{symbol}",
                 "side": "ask",           # ask = 매도
                 "ord_type": "market",    # market = 시장가 수량 지정
-                "volume": str(quantity),
+                "volume": str(round(quantity, 8)),
             }
             order = self._post('/v1/orders', body)
             logger.info(f"[LIVE:Bithumb SELL] {symbol} {quantity:.6f}개 -> {order}")
