@@ -148,17 +148,25 @@ class MacroBackfiller(MacroDataCollector):
         if not self.fred:
             return
         
-        # 1. US Backfill
+        # 1. US Backfill (Use S&P 500 proxy for consistency)
         print(f"[*] Backfilling BUFFET_INDICATOR_US from {start_date}...")
         try:
-            will5000 = self.fred.get_series('WILL5000PR', observation_start=start_date).dropna()
+            sp500 = download_ticker_data('^GSPC', start=start_date)
             gdp = self.fred.get_series('GDP', observation_start=start_date).dropna()
 
-            if not will5000.empty and not gdp.empty:
-                df = pd.DataFrame({'will5000': will5000})
+            if not sp500.empty and not gdp.empty:
+                # Helper to get Close price safely
+                def get_close(df):
+                    if isinstance(df.columns, pd.MultiIndex):
+                        return df['Close'].iloc[:, 0]
+                    return df['Close']
+
+                sp_close = get_close(sp500)
+                df = pd.DataFrame({'sp500': sp_close})
                 df['gdp'] = gdp.reindex(df.index, method='ffill')
                 df = df.dropna()
-                df['buffett'] = (df['will5000'] / df['gdp']) * 1.15
+                # US Formula: (S&P 500 * 10.5 / GDP) * 100
+                df['buffett'] = (df['sp500'] * 10.5 / df['gdp']) * 100
                 df_weekly = df.resample('W-FRI').last().dropna()
 
                 data_list = []
@@ -179,22 +187,39 @@ class MacroBackfiller(MacroDataCollector):
         except Exception as e:
             print(f"    [ERROR] BUFFET_INDICATOR_US backfill failed: {e}")
 
-        # 2. KR Backfill
+        # 2. KR Backfill (Combined KOSPI + KOSDAQ)
         print(f"[*] Backfilling BUFFET_INDICATOR_KR from {start_date}...")
         try:
             ks11 = download_ticker_data('^KS11', start=start_date)
-            if not ks11.empty:
-                # KR Buffett indicator simplified backfill
-                try:
-                    if isinstance(ks11.columns, pd.MultiIndex):
-                        ks_close = ks11['Close'].iloc[:, 0]
-                    else:
-                        ks_close = ks11['Close']
-                except Exception:
-                    ks_close = ks11.iloc[:, 0]
+            kq11 = download_ticker_data('^KQ11', start=start_date)
+            
+            try:
+                # Key: NGDPSAXDCKRQ (Nominal GDP, Millions KRW, Quarterly)
+                kr_gdp = self.fred.get_series('NGDPSAXDCKRQ', observation_start=start_date).dropna()
+            except:
+                kr_gdp = pd.Series([600000000.0], index=[datetime.now()])
+
+            if not ks11.empty and not kq11.empty:
+                # Helper to get Close price safely
+                def get_close(df):
+                    if isinstance(df.columns, pd.MultiIndex):
+                        return df['Close'].iloc[:, 0]
+                    return df['Close']
+
+                ks_close = get_close(ks11)
+                kq_close = get_close(kq11)
                 
-                df = pd.DataFrame({'kospi': ks_close})
-                df['buffett'] = (df['kospi'] / 2500) * 100.0 # Standardized to 2500=100%
+                df = pd.DataFrame({'ks': ks_close, 'kq': kq_close})
+                df['gdp_q'] = kr_gdp.reindex(df.index, method='ffill')
+                df = df.dropna(subset=['ks', 'kq', 'gdp_q'])
+                
+                # Proxy for Market Cap (Trillion KRW)
+                # KOSPI factor: ~0.78, KOSDAQ factor: ~0.47
+                df['mkt_cap'] = (df['ks'] * 0.78) + (df['kq'] * 0.47)
+                # Annualized GDP in Trillion KRW (gdp_q is in Millions)
+                df['gdp_annual'] = (df['gdp_q'] / 1000000.0) * 4
+                df['buffett'] = (df['mkt_cap'] / df['gdp_annual']) * 100
+                
                 df_weekly = df.resample('W-FRI').last().dropna()
 
                 data_list = []
@@ -211,7 +236,7 @@ class MacroBackfiller(MacroDataCollector):
                     for i in range(0, len(data_list), chunk_size):
                         chunk = data_list[i:i + chunk_size]
                         self.db.client.table("macro_indicators").upsert(chunk, on_conflict="ticker,date").execute()
-                    print(f"    [OK] BUFFET_INDICATOR_KR: {len(data_list)} rows processed.")
+                    print(f"    [OK] BUFFET_INDICATOR_KR: {len(data_list)} rows processed (KOSPI+KOSDAQ).")
         except Exception as e:
             print(f"    [ERROR] BUFFET_INDICATOR_KR backfill failed: {e}")
 

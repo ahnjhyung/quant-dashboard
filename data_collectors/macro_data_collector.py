@@ -127,35 +127,37 @@ class MacroDataCollector:
         except Exception as e:
             print(f"    [ERROR] US BUFFET_INDICATOR 산출 실패: {e}")
 
-        # 2. KR Buffet Indicator (KOSPI Proxy / KR GDP)
+        # 2. KR Buffet Indicator (Combined KOSPI + KOSDAQ)
         print("[*] Calculating BUFFET_INDICATOR (KR)...")
         try:
             ks11 = yf.download("^KS11", period="5d", progress=False)
-            # Korea Nominal GDP (Quarterly, Billions of KRW)
-            # Some keys: KRGDPNQDSMEI (deprecated?), NGDPRSAXDCKRQ (Real), etc.
-            # We'll try the common one first.
+            kq11 = yf.download("^KQ11", period="5d", progress=False)
+            
+            # Korea Nominal GDP (Quarterly, Millions of KRW, Seasonally Adjusted)
             try:
-                kr_gdp = self.fred.get_series('KRGDPNQDSMEI').dropna() 
+                # Key: NGDPSAXDCKRQ
+                kr_gdp = self.fred.get_series('NGDPSAXDCKRQ').dropna() 
             except:
-                # Fallback to a reasonable constant if FRED key fails (GDP ~ 2300 Trillion KRW)
-                kr_gdp = pd.Series([2300000.0], index=[datetime.now()]) 
+                # Fallback: Approx 2400 Trillion KRW (Quarterly 600 Trillion)
+                kr_gdp = pd.Series([600000000.0], index=[datetime.now()]) 
 
-            if not ks11.empty and not kr_gdp.empty:
+            if not ks11.empty and not kq11.empty and not kr_gdp.empty:
                 val_ks = float(ks11['Close'].iloc[-1])
-                val_kr_gdp = float(kr_gdp.iloc[-1]) # In Billions KRW
+                val_kq = float(kq11['Close'].iloc[-1])
+                val_kr_gdp_q = float(kr_gdp.iloc[-1]) # In Millions KRW
                 
-                # KOSPI 2500 is approx 2000 Trillion KRW Mkt Cap
-                # Ratio: (KOSPI * 0.8) / (GDP in Trillions)
-                # Let's normalize it so that 2500 KOSPI / 2300 GDP is around 90-100%
-                buffet_kr = (val_ks * 0.85 / (val_kr_gdp / 1000)) * 100
+                # Proxy for Market Cap (Trillion KRW)
+                # KOSPI factor: ~0.78, KOSDAQ factor: ~0.47
+                mkt_cap_trillion = (val_ks * 0.78) + (val_kq * 0.47)
                 
-                # Final normalization: historical average for KR is ~90%
-                # If GDP is 2300, KOSPI 2700 should be ~100%
-                buffet_kr = (val_ks / (val_kr_gdp / 850)) * 100
+                # Annualized GDP in Trillion KRW
+                gdp_trillion_annual = (val_kr_gdp_q / 1000000.0) * 4
+                
+                buffet_kr = (mkt_cap_trillion / gdp_trillion_annual) * 100
                 
                 date_str = ks11.index[-1].strftime("%Y-%m-%d")
                 self.db.upsert_macro_indicator("BUFFET_INDICATOR_KR", date_str, buffet_kr)
-                print(f"    [OK] BUFFET_INDICATOR_KR ({date_str}): {buffet_kr:.2f}%")
+                print(f"    [OK] BUFFET_INDICATOR_KR ({date_str}): {buffet_kr:.2f}% (KOSPI+KOSDAQ / Annualized GDP)")
         except Exception as e:
             print(f"    [ERROR] KR BUFFET_INDICATOR 산출 실패: {e}")
 

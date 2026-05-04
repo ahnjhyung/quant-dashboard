@@ -629,33 +629,58 @@ if run_macro:
         st.warning("Supabase에 해당 지표 데이터가 없습니다. `macro_data_collector.py`를 먼저 실행하세요.")
 
     # Buffett Indicator (US & KR)
-    st.markdown("###  Buffett Indicator (Market Temperature)")
-    st.info("버핏 인디케이터 = (국가 전체 시가총액 / GDP) × 100. 보통 75~90%가 적정, 115% 이상은 과열로 판단합니다.")
-    col_b1, col_b2 = st.columns(2)
+    # Buffett Indicator (US & KR) - Combined Chart
+    st.markdown("### 🌎 Global Buffett Indicator (Market Temperature)")
+    st.info("버핏 지수 = (전체 시가총액 / GDP) × 100. 75~90% 적정, 115% 이상 과열. (미국: S&P 500 프록시, 한국: KOSPI+KOSDAQ 시총 프록시)")
     
-    with col_b1:
+    with st.spinner("버핏 지수 시계열 분석 중..."):
         buff_us = db.get_macro_history("BUFFET_INDICATOR_US", days=period_days)
-        if buff_us is not None and not buff_us.empty:
-            st.markdown("#### US Buffett Indicator")
-            fig_bus = go.Figure()
-            fig_bus.add_trace(go.Scatter(x=buff_us.index, y=buff_us['value'], name="US Buffett",
-                line=dict(color="#1f77b4", width=1.5), fill='tozeroy', fillcolor='rgba(31,119,180,0.08)'))
-            fig_bus.add_hline(y=100, line_dash="dash", line_color="gray", annotation_text="Fair Value")
-            fig_bus.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#fff", paper_bgcolor="#fff")
-            st.plotly_chart(fig_bus, use_container_width=True)
-            st.caption("Wilshire 5000 / GDP × 115")
-
-    with col_b2:
         buff_kr = db.get_macro_history("BUFFET_INDICATOR_KR", days=period_days)
+        
+        fig_buff = go.Figure()
+        
+        # US Data
+        if buff_us is not None and not buff_us.empty:
+            fig_buff.add_trace(go.Scatter(
+                x=buff_us.index, y=buff_us['value'],
+                name="US Buffett Index",
+                line=dict(color="#1f77b4", width=2),
+                fill='tozeroy', fillcolor='rgba(31,119,180,0.05)',
+                mode='lines+markers' if len(buff_us) < 10 else 'lines'
+            ))
+            
+        # KR Data
         if buff_kr is not None and not buff_kr.empty:
-            st.markdown("#### KR Buffett Indicator")
-            fig_bkr = go.Figure()
-            fig_bkr.add_trace(go.Scatter(x=buff_kr.index, y=buff_kr['value'], name="KR Buffett",
-                line=dict(color="#d32f2f", width=1.5), fill='tozeroy', fillcolor='rgba(211,47,47,0.08)'))
-            fig_bkr.add_hline(y=100, line_dash="dash", line_color="gray", annotation_text="Fair Value (KOSPI 2500)")
-            fig_bkr.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#fff", paper_bgcolor="#fff")
-            st.plotly_chart(fig_bkr, use_container_width=True)
-            st.caption("KOSPI / 2500 × 100")
+            fig_buff.add_trace(go.Scatter(
+                x=buff_kr.index, y=buff_kr['value'],
+                name="KR Buffett Index",
+                line=dict(color="#d32f2f", width=2),
+                fill='tozeroy', fillcolor='rgba(211,47,47,0.05)',
+                mode='lines+markers' if len(buff_kr) < 10 else 'lines'
+            ))
+            
+        # Add Reference Lines
+        fig_buff.add_hline(y=100, line_dash="dash", line_color="#888", annotation_text="Fair Value (100%)", annotation_position="top left")
+        fig_buff.add_hline(y=120, line_dash="dot", line_color="#d32f2f", annotation_text="Overvalued", annotation_position="top left")
+        fig_buff.add_hline(y=80, line_dash="dot", line_color="#2e7d32", annotation_text="Undervalued", annotation_position="bottom left")
+        
+        fig_buff.update_layout(
+            height=450,
+            plot_bgcolor="#fff", paper_bgcolor="#fff",
+            font=dict(family=FONT_FAMILY, color="#333"),
+            legend=dict(orientation="h", y=1.1, x=0),
+            margin=dict(l=0, r=0, t=30, b=0),
+            hovermode="x unified",
+            xaxis=dict(gridcolor="#f0f0f0", title="Date"),
+            yaxis=dict(gridcolor="#f0f0f0", title="Indicator (%)", range=[0, max(250, (buff_us['value'].max() if buff_us is not None else 0), (buff_kr['value'].max() if buff_kr is not None else 0)) + 20]),
+        )
+        st.plotly_chart(fig_buff, use_container_width=True)
+        
+    col_desc1, col_desc2 = st.columns(2)
+    with col_desc1:
+        st.caption("🇺🇸 US Formula: (Wilshire 5000 / GDP) × 100 (Proxy)")
+    with col_desc2:
+        st.caption("🇰🇷 KR Formula: (KOSPI Market Cap / GDP) × 100 (Proxy)")
 
 
 # ── Default State ────────────────────────────────────────────────────
