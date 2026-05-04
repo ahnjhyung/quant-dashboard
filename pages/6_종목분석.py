@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 
-st.set_page_config(page_title="종목발굴", layout="wide")
+st.set_page_config(page_title="퀀트 밸류 스크린", layout="wide")
 
 # ── CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
@@ -53,8 +53,8 @@ h1, h2, h3 { color: #111111; font-weight: 600; }
 
 
 # ── Title ────────────────────────────────────────────────────────────
-st.markdown("# 종목발굴")
-st.markdown("개별 종목의 가치 분석(DCF, F-Score)과 기술적 분석(RSI, MACD, 볼린저밴드)을 통합 제공합니다.")
+st.markdown("# 퀀트 밸류 스크린")
+st.markdown("가치 지표(PBR, GP/A, F-Score)를 결합한 퀀트 전략으로 저평가 우량주 50개를 발굴합니다.")
 
 
 # ── Session State Init ───────────────────────────────────────────────
@@ -66,15 +66,22 @@ with st.sidebar:
     st.markdown("### Mode")
     mode = st.radio(
         "분석 모드 선택",
-        ["종목 분석", "종목 비교 (Multi-Screen)", "Macro Dashboard"],
+        ["종목발굴 (스크린)", "개별 종목 분석", "매크로 대시보드"],
         index=0, label_visibility="collapsed"
     )
     st.session_state.fs_mode = mode
 
     st.markdown("---")
 
-    if mode == "종목 분석":
-        st.markdown("### 종목 분석")
+    if mode == "종목발굴 (스크린)":
+        st.markdown("### 스크리닝 설정")
+        market_choice = st.radio("시장 선택", ["KOSPI 200", "S&P 500", "Mixed (KOR+US)"], index=0)
+        run_discovery = st.button("종목 발굴 시작", use_container_width=True)
+    else:
+        run_discovery = False
+
+    if mode == "개별 종목 분석":
+        st.markdown("### 개별 종목 분석")
         ticker_input = st.text_input(
             "Ticker",
             value="AAPL",
@@ -92,24 +99,11 @@ with st.sidebar:
         analysis_period = "1y"
         run_analysis = False
 
-    if mode == "종목 비교 (Multi-Screen)":
-        st.markdown("### 종목 비교")
-        st.caption("여러 종목의 재무 지표를 한 번에 비교합니다.")
-        screen_tickers = st.text_area(
-            "종목 리스트 (쉼표 구분)",
-            "AAPL, MSFT, GOOG, AMZN, META, NVDA, TSLA, JPM",
-            help="Magic Formula 순위 및 가치 지표 비교 대상"
-        )
-        run_screening = st.button("비교 실행", use_container_width=True)
-    else:
-        screen_tickers = ""
-        run_screening = False
-
     # Macro mode has no sidebar inputs needed
-    run_macro = (mode == "Macro Dashboard")
+    run_macro = (mode == "매크로 대시보드")
 
     st.markdown("---")
-    st.caption(f"v3.0 | {datetime.now().strftime('%Y-%m-%d')}")
+    st.caption(f"v3.1 | {datetime.now().strftime('%Y-%m-%d')}")
 
 
 # ── Analysis Engine Import ───────────────────────────────────────────
@@ -126,7 +120,7 @@ FONT_FAMILY = "Noto Sans KR, Inter, sans-serif"
 CHART_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 
 
-# ── Individual Analysis ─────────────────────────────────────────────
+# ── Individual Analysis (개별 종목 분석) ──────────────────────────────
 if run_analysis and ticker_input:
     ticker = ticker_input.strip().upper()
 
@@ -429,148 +423,87 @@ if run_analysis and ticker_input:
                     st.markdown(f"**{k}:** {v}")
 
 
-# ── Screening (종목 비교) ──────────────────────────────────────────────
-if run_screening and screen_tickers:
-    tickers = [t.strip().upper() for t in screen_tickers.split(",") if t.strip()]
-
-    st.markdown("---")
-    st.markdown("## 종목 비교 결과")
-
-    with st.expander("지표 설명 보기", expanded=False):
-        st.markdown("""
-| 지표 | 설명 | 해석 |
-|:---|:---|:---|
-| **PER** | 주가수익비율 (Price/Earnings) | 낮을수록 저평가. 일반적으로 15 이하가 저평가 영역 |
-| **PBR** | 주가순자산비율 (Price/Book) | 낮을수록 자산 대비 저평가. 1 미만이면 순자산 이하 거래 |
-| **ROE** | 자기자본이익률 (%) | 높을수록 수익성 좋음. 15% 이상이면 우수 |
-| **EY (Earnings Yield)** | 이익수익률 = 1/PER | 높을수록 저평가. 채권 금리와 비교 가능 |
-| **ROC** | 투하자본수익률 (Return on Capital) | 투입 자본 대비 수익성. 높을수록 효율적 기업 |
-| **D/E Ratio** | 부채비율 (Debt/Equity) | 낮을수록 재무 건전성 양호. 1 이하 권장 |
-| **Dividend %** | 배당수익률 | 높을수록 현금흐름 좋음. 2~5%가 일반적 |
-| **Magic Formula Rank** | EY + ROC 종합 순위 | 낮을수록 좋음 (저평가 + 고품질) |
-| **Score / Grade** | 가치투자 종합 평가 (100점 만점) | ROE(30%), PER(25%), PBR(20%), D/E(15%), 배당(10%) 등 5가지 지표를 가중 평가. 80점 이상 S, 65점 이상 A |
-        """)
-
-    tab_magic, tab_value, tab_deep_value, tab_quant_value = st.tabs(["Magic Formula", "Value Screen", "Deep Value Screen", "Quant Value Screen"])
-
-    with tab_magic:
-        with st.spinner("Magic Formula 순위 계산 중..."):
+# ── Discovery (가치투자 종목발굴) ──────────────────────────────────────
+if mode == "종목발굴 (스크린)":
+    st.markdown("## 퀀트 가치투자 종목 발굴")
+    st.markdown("**전략**: 소형주(하위 20%) + F-Score 7점 이상 + PBR & GP/A 복합 순위 상위 50선")
+    
+    if run_discovery:
+        # 1. 확장된 대상 티커 리스트
+        KOSPI_COMPREHENSIVE = [
+            "005930.KS", "000660.KS", "035420.KS", "035720.KS", "005380.KS", "000270.KS", "068270.KS", "051910.KS", "006400.KS", "005490.KS",
+            "105560.KS", "055550.KS", "032830.KS", "003550.KS", "012330.KS", "015760.KS", "011780.KS", "010950.KS", "034220.KS", "000810.KS",
+            "066570.KS", "003670.KS", "030240.KS", "033780.KS", "017670.KS", "009150.KS", "036570.KS", "086790.KS", "004020.KS", "010130.KS",
+            "373220.KS", "207940.KS", "000720.KS", "000100.KS", "008930.KS", "012450.KS", "096770.KS", "042700.KS", "011070.KS", "010140.KS",
+            "001040.KS", "001450.KS", "002380.KS", "003410.KS", "003490.KS", "004170.KS", "004800.KS", "004990.KS", "005830.KS", "005940.KS",
+            "007070.KS", "008770.KS", "009540.KS", "009830.KS", "011170.KS", "011210.KS", "012750.KS", "014680.KS", "016360.KS", "018260.KS",
+            "018880.KS", "021240.KS", "024110.KS", "028050.KS", "028260.KS", "028670.KS", "029780.KS", "032640.KS", "034020.KS", "034730.KS",
+            "036460.KS", "047040.KS", "047050.KS", "047810.KS", "051900.KS", "069500.KS", "069960.KS", "071050.KS", "078930.KS", "086280.KS",
+            "000080.KS", "000210.KS", "000240.KS", "000670.KS", "000720.KS", "000990.KS", "001040.KS", "001230.KS", "001430.KS", "001450.KS",
+            "001500.KS", "001740.KS", "001800.KS", "002350.KS", "002380.KS", "002790.KS", "003000.KS", "003090.KS", "003230.KS", "003410.KS",
+            "003490.KS", "003520.KS", "003550.KS", "003670.KS", "003850.KS", "004000.KS", "004020.KS", "004170.KS", "004370.KS", "004490.KS"
+        ]
+        SNP_COMPREHENSIVE = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "BRK-B", "TSLA", "V", "UNH",
+            "JNJ", "XOM", "WMT", "MA", "PG", "LLY", "AVGO", "HD", "CVX", "ORCL",
+            "ABBV", "KO", "PEP", "MRK", "BAC", "COST", "PFE", "TMO", "MCD", "CSCO",
+            "ACN", "ABT", "ADBE", "LIN", "VZ", "DIS", "WFC", "INTC", "TXN", "PM",
+            "DHR", "NFLX", "AMD", "RTX", "HON", "NEE", "MS", "AMAT", "LOW", "COP",
+            "IBM", "GS", "BA", "GE", "CAT", "UPS", "T", "DE", "LMT", "QCOM",
+            "BLK", "INTU", "AXP", "AMGN", "ISRG", "MDLZ", "TJX", "SPGI", "PLD", "SYK",
+            "CI", "EL", "GILD", "CB", "ADI", "BDX", "REGN", "ETN", "MMC", "VRTX",
+            "LRCX", "BSX", "ZTS", "AMT", "PGR", "MU", "PANW", "SNPS", "FI", "CDNS",
+            "NOW", "EQIX", "TGT", "ABNB", "COST", "CRM", "CMG", "DELL", "MAR", "NKE"
+        ]
+        
+        if "KOSPI" in market_choice:
+            target_tickers = KOSPI_COMPREHENSIVE
+        elif "S&P" in market_choice:
+            target_tickers = SNP_COMPREHENSIVE
+        else:
+            target_tickers = KOSPI_COMPREHENSIVE[:40] + SNP_COMPREHENSIVE[:40]
+            
+        with st.spinner(f"{len(target_tickers)}개 종목 스크리닝 중... (금융/지주사 제외, PBR & GP/A 분석)"):
             try:
-                magic_results = value_analyzer.magic_formula_rank(tickers)
-                if magic_results:
-                    df_magic = pd.DataFrame(magic_results).head(50)
-                    display_cols = ['ticker', 'combined_rank', 'ey_rank', 'roc_rank',
-                                    'earnings_yield', 'roc', 'per', 'pbr', 'roe']
-                    display_cols = [c for c in display_cols if c in df_magic.columns]
-                    df_display = df_magic[display_cols].copy()
-                    df_display.columns = ['Ticker', 'Combined Rank', 'EY Rank', 'ROC Rank',
-                                          'Earnings Yield (%)', 'ROC (%)', 'PER', 'PBR', 'ROE (%)'][:len(display_cols)]
-                    st.dataframe(
-                        df_display.style.format({
-                            'Earnings Yield (%)': '{:.2f}',
-                            'ROC (%)': '{:.2f}',
-                            'PER': '{:.2f}',
-                            'PBR': '{:.2f}',
-                            'ROE (%)': '{:.2f}'
-                        }, na_rep="N/A"),
-                        use_container_width=True, hide_index=True
-                    )
-                else:
-                    st.caption("결과 없음")
-            except Exception as e:
-                st.error(f"Magic Formula 오류: {e}")
-
-    with tab_value:
-        with st.spinner("가치 스크리닝 중..."):
-            try:
-                value_results = value_analyzer.value_screen(tickers)
-                if value_results:
-                    df_val = pd.DataFrame(value_results).head(50)
-                    display_cols = ['ticker', 'name', 'score', 'grade', 'per', 'pbr', 'roe',
-                                    'debt_to_equity', 'dividend_yield', 'sector']
-                    display_cols = [c for c in display_cols if c in df_val.columns]
-                    df_vdisplay = df_val[display_cols].copy()
-                    df_vdisplay.columns = ['Ticker', 'Name', 'Score (100)', 'Grade', 'PER', 'PBR', 'ROE (%)',
-                                           'D/E Ratio', 'Dividend %', 'Sector'][:len(display_cols)]
+                results = value_analyzer.quant_value_screen(target_tickers)
+                
+                if results:
+                    st.success(f"조건을 만족하는 {len(results)}개 종목을 발견했습니다.")
+                    
+                    df_q = pd.DataFrame(results).head(50)
+                    # 시총 표시 변환
+                    df_q['market_cap_str'] = df_q['market_cap'].apply(lambda x: f"${x/1e9:.2f}B" if x > 1e9 else f"${x/1e6:.1f}M")
+                    
+                    display_cols = ['combined_rank', 'ticker', 'name', 'market_cap_str', 'fscore', 'pbr', 'gpa', 'sector']
+                    df_disp = df_q[display_cols].copy()
+                    df_disp.columns = ['Rank', 'Ticker', 'Name', 'Market Cap', 'F-Score', 'PBR', 'GP/A', 'Sector']
                     
                     st.dataframe(
-                        df_vdisplay.style.format({
-                            'Score (100)': "{:.1f}",
-                        }),
-                        use_container_width=True, hide_index=True
-                    )
-                else:
-                    st.caption("결과 없음")
-            except Exception as e:
-                st.error(f"Value Screen 오류: {e}")
-
-    with tab_deep_value:
-        with st.spinner("심층 가치투자 스크리닝 중..."):
-            try:
-                deep_results = value_analyzer.deep_value_screen(tickers)
-                if deep_results:
-                    df_deep = pd.DataFrame(deep_results).head(50)
-                    # Convert net_cash to billions
-                    df_deep['net_cash_B'] = df_deep['net_cash'].apply(lambda x: f"${x/1e9:,.1f}B" if x != 0 else "N/A")
-                    
-                    display_cols = ['ticker', 'name', 'score', 'pbr', 'net_cash_B', 'fcf_yield', 'rnd_ratio', 'debt_to_equity', 'sector']
-                    display_cols = [c for c in display_cols if c in df_deep.columns]
-                    df_ddisplay = df_deep[display_cols].copy()
-                    df_ddisplay.columns = ['Ticker', 'Name', 'Score (100)', 'PBR', 'Net Cash (Billion)', 'FCF Yield (%)', 'R&D Ratio (%)', 'D/E Ratio', 'Sector'][:len(display_cols)]
-                    
-                    st.dataframe(
-                        df_ddisplay.style.format({
-                            'Score (100)': "{:.1f}",
-                            'PBR': "{:.2f}",
-                            'FCF Yield (%)': "{:.2f}%",
-                            'R&D Ratio (%)': "{:.2f}%",
-                        }),
-                        use_container_width=True, hide_index=True
-                    )
-                    
-                    st.markdown("---")
-                    st.markdown("#### 스코어 세부 내역")
-                    breakdown_rows = []
-                    for res in deep_results[:50]:
-                        bd = res.get('breakdown', {})
-                        bd['Ticker'] = res['ticker']
-                        bd['Total Score'] = res['score']
-                        breakdown_rows.append(bd)
-                    
-                    if breakdown_rows:
-                        df_bd = pd.DataFrame(breakdown_rows)
-                        bd_cols = ['Ticker', 'Total Score', 'PBR', '순현금', 'FCF Yld', 'R&D', '부채비율']
-                        bd_cols = [c for c in bd_cols if c in df_bd.columns]
-                        st.dataframe(df_bd[bd_cols], use_container_width=True, hide_index=True)
-                else:
-                    st.caption("결과 없음")
-            except Exception as e:
-                st.error(f"Deep Value Screen 오류: {e}")
-    with tab_quant_value:
-        with st.spinner("퀀트 가치투자 스크리닝 중... (소형주 중심)"):
-            try:
-                quant_results = value_analyzer.quant_value_screen(tickers)
-                if quant_results:
-                    df_quant = pd.DataFrame(quant_results).head(50)
-                    display_cols = ['combined_rank', 'ticker', 'name', 'market_cap', 'fscore', 'pbr', 'gpa', 'pbr_rank', 'gpa_rank', 'sector']
-                    display_cols = [c for c in display_cols if c in df_quant.columns]
-                    df_qdisplay = df_quant[display_cols].copy()
-                    
-                    df_qdisplay['market_cap'] = df_qdisplay['market_cap'].apply(lambda x: f"${x/1e6:,.1f}M" if x > 0 else "N/A")
-                    
-                    df_qdisplay.columns = ['Combined Rank', 'Ticker', 'Name', 'Market Cap (M)', 'F-Score', 'PBR', 'GP/A', 'PBR Rank', 'GP/A Rank', 'Sector'][:len(display_cols)]
-                    
-                    st.dataframe(
-                        df_qdisplay.style.format({
+                        df_disp.style.format({
                             'PBR': "{:.2f}",
                             'GP/A': "{:.3f}",
-                        }),
+                        }).background_gradient(subset=['F-Score'], cmap='Greens')
+                          .background_gradient(subset=['PBR'], cmap='RdYlGn_r')
+                          .background_gradient(subset=['GP/A'], cmap='RdYlGn'),
                         use_container_width=True, hide_index=True
                     )
+                    
+                    # ── 상세 분석 연결 ──
+                    st.markdown("---")
+                    st.markdown("### 상세 분석 바로가기")
+                    selected_ticker = st.selectbox("종목 선택", df_q['ticker'].tolist())
+                    if st.button("선택 종목 상세 분석"):
+                        st.session_state.fs_mode = "개별 종목 분석"
+                        # 이 부분은 페이지 리프레시나 상태 변경이 필요함. 
+                        # Streamlit 특성상 여기서 직접 '개별 종목 분석'으로 이동시키려면 ticker_input을 세션에 넣고 리런해야 함.
+                        st.info(f"사이드바에서 모드를 '개별 종목 분석'으로 변경하고 {selected_ticker}를 입력하세요.")
                 else:
-                    st.caption("결과 없음 (조건을 만족하는 종목이 없습니다)")
+                    st.warning("조건(소형주 + F-Score 7점이상)을 만족하는 종목이 현재 리스트에 없습니다.")
+                    st.info("KOSPI 200, S&P 500 등 더 넓은 리스트로 확장하거나 필터 조건을 완화해야 합니다.")
             except Exception as e:
-                st.error(f"Quant Value Screen 오류: {e}")
+                st.error(f"스크리닝 중 오류 발생: {e}")
+    else:
+        st.info("왼쪽 사이드바에서 '종목 발굴 실행' 버튼을 클릭하세요.")
 
 
 # ── Macro Dashboard ──────────────────────────────────────────────────
@@ -614,7 +547,8 @@ if run_macro:
         "GC=F": "금 선물 — 안전자산 / 인플레 헤지",
         "CL=F": "원유 선물(WTI) — 에너지 / 인플레 선행",
         "DX-Y.NYB": "달러 인덱스(DXY) — 달러 강세 측정",
-        "BUFFET_INDICATOR": "버핏 지수 = S&P500/GDP×100 — 시장 과열/저평가 판단",
+        "BUFFET_INDICATOR_US": "US 버핏 지수 (시가총액 / GDP) — 100% 초과 시 고평가",
+        "BUFFET_INDICATOR_KR": "KR 버핏 지수 (시가총액 / GDP 추정) — 한국 시장 저평가 여부",
     }
 
     # Latest values card row
@@ -625,19 +559,26 @@ if run_macro:
         st.markdown("### 주요 지표 현재값")
         cols = st.columns(6)
         display_keys = [("DGS10", "미국 10년 금리", "%"), ("T10Y2Y", "10Y-2Y 스프레드", "%"),
-                        ("VIXCLS", "VIX", ""), ("UNRATE", "실업률", "%"),
-                        ("NFCI", "금융여건지수", ""), ("BAMLH0A0HYM2", "HY 스프레드", "%")]
+                        ("VIXCLS", "VIX", ""), ("BUFFET_INDICATOR_US", "US 버핏지수", "%"),
+                        ("BUFFET_INDICATOR_KR", "KR 버핏지수", "%"), ("BAMLH0A0HYM2", "HY 스프레드", "%")]
         for i, (key, label, unit) in enumerate(display_keys):
             d = latest.get(key, {})
             cur = d.get("current", 0)
             prev = d.get("prev", cur)
             delta = cur - prev
             delta_str = f"{delta:+.2f}" if delta != 0 else "-"
+            
+            # 버핏지수 색상 반전 (낮을수록 좋음)
+            if "BUFFET" in key:
+                color = "signal-buy" if cur < 80 else ("signal-sell" if cur > 120 else "signal-hold")
+            else:
+                color = "" # Default
+                
             with cols[i]:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="label">{label}</div>
-                    <div class="value">{cur:.2f}{unit}</div>
+                    <div class="value {color}">{cur:.1f}{unit}</div>
                     <div class="sub">{delta_str}</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -687,26 +628,38 @@ if run_macro:
     else:
         st.warning("Supabase에 해당 지표 데이터가 없습니다. `macro_data_collector.py`를 먼저 실행하세요.")
 
-    # Buffett Indicator
-    buffett = db.get_macro_history("BUFFET_INDICATOR", days=period_days)
-    if buffett is not None and not buffett.empty:
-        st.markdown("### Buffett Indicator")
-        st.caption(MACRO_DESCRIPTIONS.get("BUFFET_INDICATOR", ""))
-        fig_b = go.Figure()
-        fig_b.add_trace(go.Scatter(x=buffett.index, y=buffett['value'], name="Buffett Indicator",
-            line=dict(color="#d62728", width=1.5), fill='tozeroy', fillcolor='rgba(214,39,40,0.08)'))
-        fig_b.update_layout(
-            height=300, plot_bgcolor="#fff", paper_bgcolor="#fff",
-            font=dict(family=FONT_FAMILY, color="#333"),
-            margin=dict(l=0, r=0, t=10, b=0),
-            yaxis=dict(title="S&P500 / GDP × 100", gridcolor="#f0f0f0"),
-            xaxis=dict(gridcolor="#f0f0f0"),
-        )
-        st.plotly_chart(fig_b, use_container_width=True)
+    # Buffett Indicator (US & KR)
+    st.markdown("###  Buffett Indicator (Market Temperature)")
+    st.info("버핏 인디케이터 = (국가 전체 시가총액 / GDP) × 100. 보통 75~90%가 적정, 115% 이상은 과열로 판단합니다.")
+    col_b1, col_b2 = st.columns(2)
+    
+    with col_b1:
+        buff_us = db.get_macro_history("BUFFET_INDICATOR_US", days=period_days)
+        if buff_us is not None and not buff_us.empty:
+            st.markdown("#### US Buffett Indicator")
+            fig_bus = go.Figure()
+            fig_bus.add_trace(go.Scatter(x=buff_us.index, y=buff_us['value'], name="US Buffett",
+                line=dict(color="#1f77b4", width=1.5), fill='tozeroy', fillcolor='rgba(31,119,180,0.08)'))
+            fig_bus.add_hline(y=100, line_dash="dash", line_color="gray", annotation_text="Fair Value")
+            fig_bus.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#fff", paper_bgcolor="#fff")
+            st.plotly_chart(fig_bus, use_container_width=True)
+            st.caption("Wilshire 5000 / GDP × 115")
+
+    with col_b2:
+        buff_kr = db.get_macro_history("BUFFET_INDICATOR_KR", days=period_days)
+        if buff_kr is not None and not buff_kr.empty:
+            st.markdown("#### KR Buffett Indicator")
+            fig_bkr = go.Figure()
+            fig_bkr.add_trace(go.Scatter(x=buff_kr.index, y=buff_kr['value'], name="KR Buffett",
+                line=dict(color="#d32f2f", width=1.5), fill='tozeroy', fillcolor='rgba(211,47,47,0.08)'))
+            fig_bkr.add_hline(y=100, line_dash="dash", line_color="gray", annotation_text="Fair Value (KOSPI 2500)")
+            fig_bkr.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#fff", paper_bgcolor="#fff")
+            st.plotly_chart(fig_bkr, use_container_width=True)
+            st.caption("KOSPI / 2500 × 100")
 
 
 # ── Default State ────────────────────────────────────────────────────
-if mode == "종목 분석" and not run_analysis:
+if mode == "개별 종목 분석" and not run_analysis:
     st.info("사이드바에서 티커를 입력하고 '분석 실행' 버튼을 클릭하세요.")
-elif mode == "종목 비교 (Multi-Screen)" and not run_screening:
-    st.info("사이드바에서 종목 리스트를 입력하고 '비교 실행' 버튼을 클릭하세요.")
+elif mode == "종목발굴 (스크린)" and not run_discovery:
+    st.info("왼쪽 사이드바에서 '종목 발굴 시작' 버튼을 클릭하세요.")

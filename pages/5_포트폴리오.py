@@ -656,7 +656,7 @@ else:
                                 mode="markers+text",
                                 text=["최적점"],
                                 textposition="top center",
-                                marker=dict(size=10, color="#d62728", symbol="circle"),
+                                marker=dict(size=8, color="#d62728", symbol="circle"),
                                 name="최적 포트폴리오",
                                 showlegend=False,
                             ))
