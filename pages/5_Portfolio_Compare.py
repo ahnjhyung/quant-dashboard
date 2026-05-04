@@ -177,12 +177,31 @@ def search_tickers(query: str) -> list:
 # ── Sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 설정")
-    start_date = st.date_input("시작일", datetime(2010, 1, 1))
+    st.markdown("##### 시작일")
+    _col_y, _col_m = st.columns(2)
+    with _col_y:
+        start_year = st.selectbox(
+            "연도", list(range(2025, 1969, -1)),
+            index=list(range(2025, 1969, -1)).index(2010),
+            key="start_year",
+            label_visibility="collapsed"
+        )
+    with _col_m:
+        month_labels = [f"{m}월" for m in range(1, 13)]
+        start_month = st.selectbox(
+            "월", month_labels,
+            index=0,
+            key="start_month",
+            label_visibility="collapsed"
+        )
+    start_date = datetime(start_year, month_labels.index(start_month) + 1, 1)
+
     rebalance_freq = st.selectbox(
         "Rebalancing",
         ["Monthly (ME)", "Quarterly (QE)", "Yearly (YE)"],
         index=0
     )
+    st.caption("⚙️ 선택한 리밸런싱 주기는 **모든** 포트폴리오에 동일하게 적용됩니다.")
     freq_map = {"Monthly (ME)": "ME", "Quarterly (QE)": "QE", "Yearly (YE)": "YE"}
 
     st.markdown("---")
