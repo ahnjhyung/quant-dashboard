@@ -572,6 +572,224 @@ class ValueInvestingAnalyzer:
 
         return sorted(results, key=lambda x: -x['score'])
 
+    def deep_value_screen(self, tickers: list) -> list:
+        """
+        심층 가치투자 스크리닝 (사용자 맞춤형 안전마진 + 팻테일 척도)
+        
+        조건:
+        1. PBR: 자산 가치 측면 안전마진
+        2. 순현금 (Net Cash = Total Cash - Total Debt): 재무 안전성
+        3. R&D 비율 (R&D / Revenue): 미래 팻테일을 위한 투자 비중
+        4. 부채 비율 (Debt / Equity): 예상치 못한 충격에 대한 강건함
+        5. FCF 수익률 (FCF / Market Cap): 현금 창출력 및 옵션 매수 체력
+        """
+        results = []
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                # 1. PBR
+                pbr = info.get('priceToBook', 0)
+                
+                # 2. 순현금
+                total_cash = info.get('totalCash', 0) or 0
+                total_debt = info.get('totalDebt', 0) or 0
+                net_cash = total_cash - total_debt
+                
+                # 3. FCF 수익률
+                fcf = info.get('freeCashflow', 0) or 0
+                market_cap = info.get('marketCap', 1) or 1
+                fcf_yield = (fcf / market_cap) * 100 if market_cap else 0
+                
+                # 4. R&D 비중
+                rnd_ratio = 0
+                try:
+                    inc = stock.income_stmt
+                    if not inc.empty:
+                        rnd = inc.loc['Research And Development'].iloc[0] if 'Research And Development' in inc.index else 0
+                        rev = inc.loc['Total Revenue'].iloc[0] if 'Total Revenue' in inc.index else 1
+                        rnd_ratio = (rnd / rev) * 100 if rev else 0
+                except:
+                    pass
+                
+                # 5. 부채비율
+                debt_to_equity = info.get('debtToEquity', 0) or 0
+                
+                # 점수 계산 (100점 만점)
+                score = 0
+                breakdown = {}
+                
+                if pbr and pbr <= 1.0: 
+                    score += 20; breakdown['PBR'] = f"{pbr:.2f} (20점)"
+                elif pbr and pbr <= 1.5: 
+                    score += 10; breakdown['PBR'] = f"{pbr:.2f} (10점)"
+                else:
+                    breakdown['PBR'] = f"{pbr:.2f} (0점)" if pbr else "N/A"
+                
+                if net_cash > 0: 
+                    score += 20; breakdown['순현금'] = f"+ (20점)"
+                else:
+                    breakdown['순현금'] = f"- (0점)"
+                
+                if fcf_yield > 5: 
+                    score += 20; breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (20점)"
+                elif fcf_yield > 0: 
+                    score += 10; breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (10점)"
+                else:
+                    breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (0점)"
+                
+                if rnd_ratio > 10: 
+                    score += 20; breakdown['R&D'] = f"{rnd_ratio:.1f}% (20점)"
+                elif rnd_ratio > 5: 
+                    score += 10; breakdown['R&D'] = f"{rnd_ratio:.1f}% (10점)"
+                else:
+                    breakdown['R&D'] = f"{rnd_ratio:.1f}% (0점)"
+                
+                if debt_to_equity > 0 and debt_to_equity <= 50: 
+                    score += 20; breakdown['부채비율'] = f"{debt_to_equity:.1f}% (20점)"
+                elif debt_to_equity > 0 and debt_to_equity <= 100: 
+                    score += 10; breakdown['부채비율'] = f"{debt_to_equity:.1f}% (10점)"
+                else:
+                    breakdown['부채비율'] = f"{debt_to_equity:.1f}% (0점)"
+                
+                results.append({
+                    'ticker': ticker,
+                    'name': info.get('longName', ticker),
+                    'sector': info.get('sector', ''),
+                    'score': score,
+                    'pbr': round(pbr, 2) if pbr else None,
+                    'net_cash': net_cash,
+                    'fcf_yield': round(fcf_yield, 2),
+                    'rnd_ratio': round(rnd_ratio, 2),
+                    'debt_to_equity': round(debt_to_equity, 1),
+                    'breakdown': breakdown
+                })
+                
+            except Exception as e:
+                print(f"⚠️ 심층 스크리닝 에러 [{ticker}]: {e}")
+                
+                
+        return sorted(results, key=lambda x: -x['score'])
+
+    def quant_value_screen(self, tickers: list) -> list:
+        """
+        Quant Value Screen (소형주 퀀트 가치투자)
+        - 제외 섹터: Financials, Utilities, Holding Companies
+        - 시가총액 하위 20% 필터링
+        - F-Score >= 7
+        - PBR (낮을수록 좋음) 순위 + GP/A (높을수록 좋음) 순위 합산
+        """
+        valid_tickers = []
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                sector = info.get('sector', '')
+                industry = info.get('industry', '')
+                
+                # 제외 섹터 필터링
+                excluded_keywords = ['Financial', 'Utilities', 'Holding']
+                if any(kw.lower() in sector.lower() or kw.lower() in industry.lower() for kw in excluded_keywords):
+                    continue
+                
+                market_cap = info.get('marketCap', 0)
+                if not market_cap or market_cap == 0:
+                    continue
+                    
+                valid_tickers.append({
+                    'ticker': ticker,
+                    'market_cap': market_cap,
+                    'info': info,
+                    'sector': sector,
+                    'stock': stock
+                })
+            except Exception as e:
+                print(f"⚠️ Basic Info 에러 [{ticker}]: {e}")
+                
+        if not valid_tickers:
+            return []
+            
+        # 시가총액 하위 20% 필터링
+        valid_tickers.sort(key=lambda x: x['market_cap'])
+        cutoff_index = max(1, int(len(valid_tickers) * 0.2))
+        small_cap_tickers = valid_tickers[:cutoff_index]
+        
+        screened_data = []
+        for item in small_cap_tickers:
+            ticker = item['ticker']
+            stock = item['stock']
+            info = item['info']
+            try:
+                # F-Score 필터링
+                fscore_data = self.piotroski_score(ticker)
+                if fscore_data.get('score', 0) < 7:
+                    continue
+                    
+                pbr = info.get('priceToBook')
+                if not pbr or pbr <= 0:
+                    continue
+                    
+                # GP/A 계산
+                gross_profit = info.get('grossProfits')
+                total_assets = info.get('totalAssets')
+                
+                if gross_profit is None:
+                    try:
+                        inc = stock.income_stmt
+                        if not inc.empty and 'Gross Profit' in inc.index:
+                            gross_profit = inc.loc['Gross Profit'].iloc[0]
+                    except:
+                        pass
+                
+                if total_assets is None:
+                    try:
+                        bal = stock.balance_sheet
+                        if not bal.empty and 'Total Assets' in bal.index:
+                            total_assets = bal.loc['Total Assets'].iloc[0]
+                    except:
+                        pass
+                        
+                if gross_profit is None or total_assets is None or total_assets <= 0:
+                    continue
+                    
+                gpa = gross_profit / total_assets
+                
+                screened_data.append({
+                    'ticker': ticker,
+                    'name': info.get('longName', ticker),
+                    'sector': item['sector'],
+                    'market_cap': item['market_cap'],
+                    'pbr': pbr,
+                    'gpa': gpa,
+                    'fscore': fscore_data.get('score', 0)
+                })
+            except Exception as e:
+                print(f"⚠️ Quant Value Screen 지표 에러 [{ticker}]: {e}")
+                
+        if not screened_data:
+            return []
+            
+        # PBR Rank (낮을수록 좋음 -> 오름차순 정렬)
+        screened_data.sort(key=lambda x: x['pbr'])
+        for i, item in enumerate(screened_data):
+            item['pbr_rank'] = i + 1
+            
+        # GP/A Rank (높을수록 좋음 -> 내림차순 정렬)
+        screened_data.sort(key=lambda x: -x['gpa'])
+        for i, item in enumerate(screened_data):
+            item['gpa_rank'] = i + 1
+            
+        # 통합 랭크 계산
+        for item in screened_data:
+            item['combined_rank'] = item['pbr_rank'] + item['gpa_rank']
+            
+        # 통합 랭크 오름차순 정렬 (낮을수록 좋음)
+        screened_data.sort(key=lambda x: x['combined_rank'])
+        
+        return screened_data
+
 # ==========================================
 # STANDALONE TEST
 # ==========================================

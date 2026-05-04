@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 
-st.set_page_config(page_title="Fundamental & Swing", layout="wide")
+st.set_page_config(page_title="종목발굴", layout="wide")
 
 # ── CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
@@ -53,7 +53,7 @@ h1, h2, h3 { color: #111111; font-weight: 600; }
 
 
 # ── Title ────────────────────────────────────────────────────────────
-st.markdown("# Fundamental & Swing Analysis")
+st.markdown("# 종목발굴")
 st.markdown("개별 종목의 가치 분석(DCF, F-Score)과 기술적 분석(RSI, MACD, 볼린저밴드)을 통합 제공합니다.")
 
 
@@ -436,7 +436,7 @@ if run_screening and screen_tickers:
     st.markdown("---")
     st.markdown("## 종목 비교 결과")
 
-    with st.expander("📊 지표 설명 보기", expanded=False):
+    with st.expander("지표 설명 보기", expanded=False):
         st.markdown("""
 | 지표 | 설명 | 해석 |
 |:---|:---|:---|
@@ -451,14 +451,14 @@ if run_screening and screen_tickers:
 | **Score / Grade** | 가치투자 종합 평가 (100점 만점) | ROE(30%), PER(25%), PBR(20%), D/E(15%), 배당(10%) 등 5가지 지표를 가중 평가. 80점 이상 S, 65점 이상 A |
         """)
 
-    tab_magic, tab_value = st.tabs(["Magic Formula", "Value Screen"])
+    tab_magic, tab_value, tab_deep_value, tab_quant_value = st.tabs(["Magic Formula", "Value Screen", "Deep Value Screen", "Quant Value Screen"])
 
     with tab_magic:
         with st.spinner("Magic Formula 순위 계산 중..."):
             try:
                 magic_results = value_analyzer.magic_formula_rank(tickers)
                 if magic_results:
-                    df_magic = pd.DataFrame(magic_results)
+                    df_magic = pd.DataFrame(magic_results).head(50)
                     display_cols = ['ticker', 'combined_rank', 'ey_rank', 'roc_rank',
                                     'earnings_yield', 'roc', 'per', 'pbr', 'roe']
                     display_cols = [c for c in display_cols if c in df_magic.columns]
@@ -485,7 +485,7 @@ if run_screening and screen_tickers:
             try:
                 value_results = value_analyzer.value_screen(tickers)
                 if value_results:
-                    df_val = pd.DataFrame(value_results)
+                    df_val = pd.DataFrame(value_results).head(50)
                     display_cols = ['ticker', 'name', 'score', 'grade', 'per', 'pbr', 'roe',
                                     'debt_to_equity', 'dividend_yield', 'sector']
                     display_cols = [c for c in display_cols if c in df_val.columns]
@@ -503,6 +503,74 @@ if run_screening and screen_tickers:
                     st.caption("결과 없음")
             except Exception as e:
                 st.error(f"Value Screen 오류: {e}")
+
+    with tab_deep_value:
+        with st.spinner("심층 가치투자 스크리닝 중..."):
+            try:
+                deep_results = value_analyzer.deep_value_screen(tickers)
+                if deep_results:
+                    df_deep = pd.DataFrame(deep_results).head(50)
+                    # Convert net_cash to billions
+                    df_deep['net_cash_B'] = df_deep['net_cash'].apply(lambda x: f"${x/1e9:,.1f}B" if x != 0 else "N/A")
+                    
+                    display_cols = ['ticker', 'name', 'score', 'pbr', 'net_cash_B', 'fcf_yield', 'rnd_ratio', 'debt_to_equity', 'sector']
+                    display_cols = [c for c in display_cols if c in df_deep.columns]
+                    df_ddisplay = df_deep[display_cols].copy()
+                    df_ddisplay.columns = ['Ticker', 'Name', 'Score (100)', 'PBR', 'Net Cash (Billion)', 'FCF Yield (%)', 'R&D Ratio (%)', 'D/E Ratio', 'Sector'][:len(display_cols)]
+                    
+                    st.dataframe(
+                        df_ddisplay.style.format({
+                            'Score (100)': "{:.1f}",
+                            'PBR': "{:.2f}",
+                            'FCF Yield (%)': "{:.2f}%",
+                            'R&D Ratio (%)': "{:.2f}%",
+                        }),
+                        use_container_width=True, hide_index=True
+                    )
+                    
+                    st.markdown("---")
+                    st.markdown("#### 스코어 세부 내역")
+                    breakdown_rows = []
+                    for res in deep_results[:50]:
+                        bd = res.get('breakdown', {})
+                        bd['Ticker'] = res['ticker']
+                        bd['Total Score'] = res['score']
+                        breakdown_rows.append(bd)
+                    
+                    if breakdown_rows:
+                        df_bd = pd.DataFrame(breakdown_rows)
+                        bd_cols = ['Ticker', 'Total Score', 'PBR', '순현금', 'FCF Yld', 'R&D', '부채비율']
+                        bd_cols = [c for c in bd_cols if c in df_bd.columns]
+                        st.dataframe(df_bd[bd_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.caption("결과 없음")
+            except Exception as e:
+                st.error(f"Deep Value Screen 오류: {e}")
+    with tab_quant_value:
+        with st.spinner("퀀트 가치투자 스크리닝 중... (소형주 중심)"):
+            try:
+                quant_results = value_analyzer.quant_value_screen(tickers)
+                if quant_results:
+                    df_quant = pd.DataFrame(quant_results).head(50)
+                    display_cols = ['combined_rank', 'ticker', 'name', 'market_cap', 'fscore', 'pbr', 'gpa', 'pbr_rank', 'gpa_rank', 'sector']
+                    display_cols = [c for c in display_cols if c in df_quant.columns]
+                    df_qdisplay = df_quant[display_cols].copy()
+                    
+                    df_qdisplay['market_cap'] = df_qdisplay['market_cap'].apply(lambda x: f"${x/1e6:,.1f}M" if x > 0 else "N/A")
+                    
+                    df_qdisplay.columns = ['Combined Rank', 'Ticker', 'Name', 'Market Cap (M)', 'F-Score', 'PBR', 'GP/A', 'PBR Rank', 'GP/A Rank', 'Sector'][:len(display_cols)]
+                    
+                    st.dataframe(
+                        df_qdisplay.style.format({
+                            'PBR': "{:.2f}",
+                            'GP/A': "{:.3f}",
+                        }),
+                        use_container_width=True, hide_index=True
+                    )
+                else:
+                    st.caption("결과 없음 (조건을 만족하는 종목이 없습니다)")
+            except Exception as e:
+                st.error(f"Quant Value Screen 오류: {e}")
 
 
 # ── Macro Dashboard ──────────────────────────────────────────────────
@@ -611,7 +679,7 @@ if run_macro:
         st.plotly_chart(fig_macro, use_container_width=True)
 
         # 선택된 그룹의 지표 설명 표시
-        with st.expander("📚 선택된 지표 설명", expanded=False):
+        with st.expander("선택된 지표 설명", expanded=False):
             for t in tickers_to_show:
                 desc = MACRO_DESCRIPTIONS.get(t, "")
                 if desc:

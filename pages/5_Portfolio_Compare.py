@@ -10,7 +10,7 @@ import numpy as np
 import yfinance as yf
 
 # Page Config
-st.set_page_config(page_title="포트폴리오 분석기", layout="wide")
+st.set_page_config(page_title="포트폴리오 비교", layout="wide")
 
 # Notion Embed Detection
 is_embed = st.query_params.get("embed", "false").lower() == "true"
@@ -141,7 +141,7 @@ section[data-testid="stSidebarNav"] { display: none; }
 
 # ── Header ───────────────────────────────────────────────────────────
 if not is_embed:
-    st.markdown("## 포트폴리오 비교 분석")
+    st.markdown("## 포트폴리오 비교")
     st.caption("멀티에셋 포트폴리오 백테스팅 및 리스크 분석")
 
 
@@ -201,7 +201,7 @@ with st.sidebar:
         ["Monthly (ME)", "Quarterly (QE)", "Yearly (YE)"],
         index=0
     )
-    st.caption("⚙️ 선택한 리밸런싱 주기는 **모든** 포트폴리오에 동일하게 적용됩니다.")
+    st.caption("선택한 리밸런싱 주기는 **모든** 포트폴리오에 동일하게 적용됩니다.")
     freq_map = {"Monthly (ME)": "ME", "Quarterly (QE)": "QE", "Yearly (YE)": "YE"}
 
     st.markdown("---")
@@ -237,8 +237,10 @@ with st.sidebar:
         key="selected_presets"
     )
 
-    with st.expander("📚 전략 설명 보기"):
+    with st.expander("전략 설명 보기"):
         st.markdown("""
+        - **Classic 60/40**: 
+          주식(SPY) 60%와 장기채(TLT) 40%로 구성된 가장 전통적이고 대중적인 자산배분 전략입니다. 포트폴리오의 교과서적인 기준으로 활용됩니다.
         - **Permanent (영구 포트폴리오)**: 
           주식(SPY), 장기채(TLT), 현금(SHY), 금(GLD)에 각각 **25%씩** 배분하는 전략입니다. 경제의 4계절(호황/불황/인플레/디플레)을 모두 방어하기 위해 설계된 초저변동성 전략입니다.
         - **Golden Butterfly**: 
@@ -384,7 +386,7 @@ else:
                     """, unsafe_allow_html=True)
 
             # ── Tabs ─────────────────────────────────────────────
-            tab_growth, tab_risk, tab_optimizer = st.tabs(["성장 추이", "리스크", "🧠 매크로 최적화"])
+            tab_growth, tab_risk, tab_optimizer = st.tabs(["성장 추이", "리스크", "매크로 최적화"])
 
             with tab_growth:
                 # 혹시 모를 결측치에 대비해 각 전략의 첫 번째 유효 데이터를 기준으로 100으로 정규화
@@ -440,7 +442,7 @@ else:
                     fig_scatter = go.Figure()
                     for idx, row in df_summary.iterrows():
                         fig_scatter.add_trace(go.Scatter(
-                            x=[row["MDD"] * 100],
+                            x=[abs(row["MDD"]) * 100],
                             y=[row["CAGR"] * 100],
                             mode="markers+text",
                             text=[row["전략"]],
@@ -469,11 +471,12 @@ else:
                 with col_r:
                     fig_bar = go.Figure()
                     strategies = df_summary["전략"].tolist()
+                    bar_colors = [CHART_COLORS[i % len(CHART_COLORS)] for i in range(len(strategies))]
                     fig_bar.add_trace(go.Bar(
                         name="Sharpe",
                         x=strategies,
                         y=df_summary["Sharpe"],
-                        marker_color="#1f77b4",
+                        marker_color=bar_colors,
                     ))
                     fig_bar.update_layout(
                         title="Sharpe Ratio",
@@ -500,7 +503,7 @@ else:
                     rf_pct = st.number_input("무위험이자율 (%)", value=4.0, step=0.5, min_value=0.0, max_value=15.0)
 
                 with opt_col2:
-                    if st.button("🔍 최적 포트폴리오 산출", type="primary"):
+                    if st.button("최적 포트폴리오 산출", type="primary"):
                         optimizer = MacroOptimizer(rf=rf_pct / 100.0)
                         with st.spinner("매크로 지표 분석 및 최적화 중..."):
                             opt_result = optimizer.recommend(lookback_years=lookback)
@@ -542,6 +545,37 @@ else:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    # ── 국면 진단 근거 ──
+                    ind_y = snap.details.get('indpro_yoy', 'N/A')
+                    cpi_y = snap.details.get('cpi_yoy', 'N/A')
+                    liq_t = snap.details.get('net_liquidity_trend', 'N/A')
+                    v_val = snap.details.get('vix', 'N/A')
+                    hy_s  = snap.details.get('hy_spread', 'N/A')
+                    str_s = snap.details.get('stress_score', 'N/A')
+                    
+                    def fmt_val(val, suffix=""):
+                        if isinstance(val, (int, float)):
+                            return f"{val:.2f}{suffix}"
+                        return str(val)
+
+                    reasoning_html = f"""
+                    <div style="background: #fdfdfd; border: 1px solid #eee; border-radius: 6px; padding: 14px 18px; margin-bottom: 16px;">
+                        <div style="font-size: 0.85em; font-weight: 600; color: #444; margin-bottom: 8px;">국면 진단 상세 근거</div>
+                        <ul style="color: #444; font-size: 0.85em; line-height: 1.6; margin: 0; padding-left: 20px;">
+                            <li><b>성장 지표(INDPRO)</b>: 전년 동월 대비 {fmt_val(ind_y, '%')} (산업생산 증가율 기준)</li>
+                            <li><b>물가 지표(CPI)</b>: 전년 동월 대비 {fmt_val(cpi_y, '%')} (인플레이션 압력)</li>
+                            <li><b>유동성(Net Liquidity)</b>: 지표 추세 {fmt_val(liq_t)}</li>
+                            <li><b>시장 스트레스</b>: VIX {fmt_val(v_val)}, HY Spread {fmt_val(hy_s, '%')} → 종합 스트레스 점수 {fmt_val(str_s)}</li>
+                        </ul>
+                        <div style="font-size: 0.82em; color: #666; margin-top: 8px;">
+                            이를 바탕으로 <b>{r_label}</b> 국면에 유리한 자산군 비중 상한을 적용하고, 
+                            Mean-Variance Optimization을 통해 기대수익(EV>0) 및 Sharpe Ratio를 극대화하는 최적 포트폴리오를 산출했습니다. 
+                            <br><i>*실시간 매크로 지표는 Supabase DB를 통해 검증된 최신 데이터를 사용합니다.</i>
+                        </div>
+                    </div>
+                    """
+                    st.markdown(reasoning_html, unsafe_allow_html=True)
 
                     # ── 핵심 지표 카드 ──
                     mc1, mc2, mc3, mc4 = st.columns(4)
@@ -603,7 +637,7 @@ else:
                                 mode="markers+text",
                                 text=["최적점"],
                                 textposition="top center",
-                                marker=dict(size=14, color="#d62728", symbol="star"),
+                                marker=dict(size=14, color="#d62728", symbol="circle"),
                                 name="최적 포트폴리오",
                                 showlegend=False,
                             ))
@@ -640,7 +674,7 @@ else:
 
                     # ── 백테스트에 적용 버튼 ──
                     st.markdown("---")
-                    if st.button("📊 이 포트폴리오로 백테스트 비교에 추가"):
+                    if st.button("이 포트폴리오로 백테스트 비교에 추가"):
                         opt_weights = opt_result["weights"]
                         opt_name = f"Macro Optimal ({snap.regime})"
                         st.session_state.custom_presets[opt_name] = opt_weights
