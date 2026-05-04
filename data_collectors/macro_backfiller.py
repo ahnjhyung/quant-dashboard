@@ -141,56 +141,79 @@ class MacroBackfiller(MacroDataCollector):
     def backfill_buffett_indicator(self, start_date: str = "2004-01-01"):
         """버핏 지수 과거 데이터 계산 및 저장
         
-        Formula: S&P500 종가 / GDP * 100
+        US Formula: WILL5000PR / GDP * 1.15
+        KR Formula: (KOSPI / 2500) * 100
         GDP는 분기별이므로 forward-fill 사용.
         """
         if not self.fred:
             return
-        print(f"[*] Backfilling BUFFET_INDICATOR from {start_date}...")
+        
+        # 1. US Backfill
+        print(f"[*] Backfilling BUFFET_INDICATOR_US from {start_date}...")
         try:
-            from data_collectors.yf_utils import download_ticker_data
-            gspc = download_ticker_data('^GSPC', start=start_date)
+            will5000 = self.fred.get_series('WILL5000PR', observation_start=start_date).dropna()
             gdp = self.fred.get_series('GDP', observation_start=start_date).dropna()
 
-            if gspc.empty or gdp.empty:
-                print("    [WARN] 구성 지표 데이터 부족")
-                return
+            if not will5000.empty and not gdp.empty:
+                df = pd.DataFrame({'will5000': will5000})
+                df['gdp'] = gdp.reindex(df.index, method='ffill')
+                df = df.dropna()
+                df['buffett'] = (df['will5000'] / df['gdp']) * 1.15
+                df_weekly = df.resample('W-FRI').last().dropna()
 
-            # S&P500 Close 추출 (yfinance MultiIndex 대응)
-            try:
-                if isinstance(gspc.columns, pd.MultiIndex):
-                    sp_close = gspc['Close'].iloc[:, 0]
-                else:
-                    sp_close = gspc['Close']
-            except Exception:
-                sp_close = gspc.iloc[:, 0]
+                data_list = []
+                for date, row in df_weekly.iterrows():
+                    data_list.append({
+                        "ticker": "BUFFET_INDICATOR_US",
+                        "date": date.strftime("%Y-%m-%d"),
+                        "value": float(row['buffett']),
+                        "created_at": datetime.utcnow().isoformat()
+                    })
 
-            df = pd.DataFrame({'sp500': sp_close})
-            # GDP를 일별로 forward-fill
-            df['gdp'] = gdp.reindex(df.index, method='ffill')
-            df = df.dropna()
-            df['buffett'] = (df['sp500'] / df['gdp']) * 100.0
-
-            # 주 1회로 리샘플 (데이터량 감소)
-            df_weekly = df.resample('W-FRI').last().dropna()
-
-            data_list = []
-            for date, row in df_weekly.iterrows():
-                data_list.append({
-                    "ticker": "BUFFET_INDICATOR",
-                    "date": date.strftime("%Y-%m-%d"),
-                    "value": float(row['buffett']),
-                    "created_at": datetime.utcnow().isoformat()
-                })
-
-            if data_list:
-                chunk_size = 500
-                for i in range(0, len(data_list), chunk_size):
-                    chunk = data_list[i:i + chunk_size]
-                    self.db.client.table("macro_indicators").upsert(chunk, on_conflict="ticker,date").execute()
-                print(f"    [OK] BUFFET_INDICATOR: {len(data_list)} rows processed.")
+                if data_list:
+                    chunk_size = 500
+                    for i in range(0, len(data_list), chunk_size):
+                        chunk = data_list[i:i + chunk_size]
+                        self.db.client.table("macro_indicators").upsert(chunk, on_conflict="ticker,date").execute()
+                    print(f"    [OK] BUFFET_INDICATOR_US: {len(data_list)} rows processed.")
         except Exception as e:
-            print(f"    [ERROR] BUFFET_INDICATOR backfill failed: {e}")
+            print(f"    [ERROR] BUFFET_INDICATOR_US backfill failed: {e}")
+
+        # 2. KR Backfill
+        print(f"[*] Backfilling BUFFET_INDICATOR_KR from {start_date}...")
+        try:
+            ks11 = download_ticker_data('^KS11', start=start_date)
+            if not ks11.empty:
+                # KR Buffett indicator simplified backfill
+                try:
+                    if isinstance(ks11.columns, pd.MultiIndex):
+                        ks_close = ks11['Close'].iloc[:, 0]
+                    else:
+                        ks_close = ks11['Close']
+                except Exception:
+                    ks_close = ks11.iloc[:, 0]
+                
+                df = pd.DataFrame({'kospi': ks_close})
+                df['buffett'] = (df['kospi'] / 2500) * 100.0 # Standardized to 2500=100%
+                df_weekly = df.resample('W-FRI').last().dropna()
+
+                data_list = []
+                for date, row in df_weekly.iterrows():
+                    data_list.append({
+                        "ticker": "BUFFET_INDICATOR_KR",
+                        "date": date.strftime("%Y-%m-%d"),
+                        "value": float(row['buffett']),
+                        "created_at": datetime.utcnow().isoformat()
+                    })
+
+                if data_list:
+                    chunk_size = 500
+                    for i in range(0, len(data_list), chunk_size):
+                        chunk = data_list[i:i + chunk_size]
+                        self.db.client.table("macro_indicators").upsert(chunk, on_conflict="ticker,date").execute()
+                    print(f"    [OK] BUFFET_INDICATOR_KR: {len(data_list)} rows processed.")
+        except Exception as e:
+            print(f"    [ERROR] BUFFET_INDICATOR_KR backfill failed: {e}")
 
     def run_essentials(self):
         """핵심 지표들(CPI, INDPRO 등)만 우선 백필"""

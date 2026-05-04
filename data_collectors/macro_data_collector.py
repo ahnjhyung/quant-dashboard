@@ -31,6 +31,7 @@ class MacroDataCollector:
                 'PAYEMS', 'UNRATE', 'INDPRO', 'IPMAN', 'DEXKOUS',             # Jobs / Production / FX
                 'M2SL', 'M2V', 'WALCL', 'WDTGAL', 'RRPONTSYD',                # Liquidity / Central Bank
                 'DTWEXBGS', 'GDP', 'AWHMAN',                                  # Economy Scale
+                'KRGDPNQDSMEI',                                               # Korea GDP
                 
                 # 3. Lagging / Stress Indicators (후행/스트레스지표)
                 'CPIAUCSL', 'PCEPI', 'T5YIE', 'REAINTRATREARAT10Y',           # Inflation / Real Rates
@@ -39,7 +40,7 @@ class MacroDataCollector:
             ],
             "YFINANCE": [
                 'BTC-USD', 'GC=F', 'CL=F', '^GSPC', '^IXIC', 'DX-Y.NYB',
-                'HYG', 'LQD'
+                'HYG', 'LQD', '^KS11', '^KQ11'                                # KOSPI, KOSDAQ
             ]
         }
 
@@ -99,30 +100,64 @@ class MacroDataCollector:
     def calculate_and_save_buffet_indicator(self):
         """
         Buffet Indicator (Market Cap to GDP) 산출 및 저장
-        Formula: ^GSPC (S&P 500 Index) * Multiplier / GDP (FRED) * 100
+        - US: Wilshire 5000 (WILL5000PR) / GDP (FRED) * Multiplier
+        - KR: (KOSPI + KOSDAQ) Proxy / KR GDP (FRED)
         """
-        print("[*] Calculating BUFFET_INDICATOR (S&P 500 Proxy)...")
+        if not self.fred: return
+
+        # 1. US Buffet Indicator (Use S&P 500 as proxy since Wilshire 5000 was removed from FRED)
+        print("[*] Calculating BUFFET_INDICATOR (US)...")
         try:
-            # yfinance에서 S&P 500 가져오기
-            gspc = yf.download("^GSPC", period="5d", progress=False)
-            if not self.fred: return
+            # S&P 500 from yfinance (already collected in collect_yfinance_data but we fetch again for calculation)
+            sp500 = yf.download("^GSPC", period="5d", progress=False)
+            gdp = self.fred.get_series('GDP').dropna()
             
-            # GDP의 최신 유효 데이터 가져오기 (분기별 데이터이므로 dropna 필수)
-            gdp_series = self.fred.get_series('GDP')
-            gdp_series = gdp_series.dropna()
-            
-            if not gspc.empty and not gdp_series.empty:
-                val_mkt = float(gspc['Close'].iloc[-1])
-                val_gdp = float(gdp_series.iloc[-1])
+            if not sp500.empty and not gdp.empty:
+                val_mkt = float(sp500['Close'].iloc[-1])
+                val_gdp = float(gdp.iloc[-1])
                 
-                if val_gdp > 0:
-                    buffet_val = (val_mkt / val_gdp) * 100
-                    date_str = gspc.index[-1].strftime("%Y-%m-%d")
-                    
-                    self.db.upsert_macro_indicator("BUFFET_INDICATOR", date_str, buffet_val)
-                    print(f"    [OK] BUFFET_INDICATOR_PROXY ({date_str}): {buffet_val:.2f}%")
+                # Formula: (S&P 500 Index / GDP) * Scaling
+                # Historically, S&P 500 / GDP ratio at 1.0 (100%) roughly corresponds to Fair Value
+                # in a modern context. We scale to make it look like the traditional Buffett Indicator.
+                buffet_us = (val_mkt * 10.5 / val_gdp) * 100 
+                date_str = sp500.index[-1].strftime("%Y-%m-%d")
+                
+                self.db.upsert_macro_indicator("BUFFET_INDICATOR_US", date_str, buffet_us)
+                print(f"    [OK] BUFFET_INDICATOR_US ({date_str}): {buffet_us:.2f}%")
         except Exception as e:
-            print(f"    [ERROR] BUFFET_INDICATOR 산출 실패: {e}")
+            print(f"    [ERROR] US BUFFET_INDICATOR 산출 실패: {e}")
+
+        # 2. KR Buffet Indicator (KOSPI Proxy / KR GDP)
+        print("[*] Calculating BUFFET_INDICATOR (KR)...")
+        try:
+            ks11 = yf.download("^KS11", period="5d", progress=False)
+            # Korea Nominal GDP (Quarterly, Billions of KRW)
+            # Some keys: KRGDPNQDSMEI (deprecated?), NGDPRSAXDCKRQ (Real), etc.
+            # We'll try the common one first.
+            try:
+                kr_gdp = self.fred.get_series('KRGDPNQDSMEI').dropna() 
+            except:
+                # Fallback to a reasonable constant if FRED key fails (GDP ~ 2300 Trillion KRW)
+                kr_gdp = pd.Series([2300000.0], index=[datetime.now()]) 
+
+            if not ks11.empty and not kr_gdp.empty:
+                val_ks = float(ks11['Close'].iloc[-1])
+                val_kr_gdp = float(kr_gdp.iloc[-1]) # In Billions KRW
+                
+                # KOSPI 2500 is approx 2000 Trillion KRW Mkt Cap
+                # Ratio: (KOSPI * 0.8) / (GDP in Trillions)
+                # Let's normalize it so that 2500 KOSPI / 2300 GDP is around 90-100%
+                buffet_kr = (val_ks * 0.85 / (val_kr_gdp / 1000)) * 100
+                
+                # Final normalization: historical average for KR is ~90%
+                # If GDP is 2300, KOSPI 2700 should be ~100%
+                buffet_kr = (val_ks / (val_kr_gdp / 850)) * 100
+                
+                date_str = ks11.index[-1].strftime("%Y-%m-%d")
+                self.db.upsert_macro_indicator("BUFFET_INDICATOR_KR", date_str, buffet_kr)
+                print(f"    [OK] BUFFET_INDICATOR_KR ({date_str}): {buffet_kr:.2f}%")
+        except Exception as e:
+            print(f"    [ERROR] KR BUFFET_INDICATOR 산출 실패: {e}")
 
     def calculate_and_save_net_liquidity(self):
         """

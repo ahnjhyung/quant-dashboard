@@ -559,19 +559,38 @@ else:
                             return f"{val:.2f}{suffix}"
                         return str(val)
 
+                    # ── 버핏 지표 해석 ──
+                    def get_buffet_label(val):
+                        if val is None: return "N/A"
+                        if val < 75: return "매우 저평가"
+                        elif val < 90: return "저평가"
+                        elif val < 115: return "적정 가치"
+                        elif val < 135: return "고평가"
+                        else: return "매우 고평가"
+
+                    b_us = snap.details.get('buffet_us')
+                    b_kr = snap.details.get('buffet_kr')
+                    b_us_label = get_buffet_label(b_us)
+                    b_kr_label = get_buffet_label(b_kr)
+
                     reasoning_html = f"""
                     <div style="background: #fdfdfd; border: 1px solid #eee; border-radius: 6px; padding: 14px 18px; margin-bottom: 16px;">
-                        <div style="font-size: 0.85em; font-weight: 600; color: #444; margin-bottom: 8px;">국면 진단 상세 근거</div>
-                        <ul style="color: #444; font-size: 0.85em; line-height: 1.6; margin: 0; padding-left: 20px;">
-                            <li><b>성장 지표(INDPRO)</b>: 전년 동월 대비 {fmt_val(ind_y, '%')} (산업생산 증가율 기준)</li>
-                            <li><b>물가 지표(CPI)</b>: 전년 동월 대비 {fmt_val(cpi_y, '%')} (인플레이션 압력)</li>
-                            <li><b>유동성(Net Liquidity)</b>: 지표 추세 {fmt_val(liq_t)}</li>
-                            <li><b>시장 스트레스</b>: VIX {fmt_val(v_val)}, HY Spread {fmt_val(hy_s, '%')} → 종합 스트레스 점수 {fmt_val(str_s)}</li>
-                        </ul>
-                        <div style="font-size: 0.82em; color: #666; margin-top: 8px;">
-                            이를 바탕으로 <b>{r_label}</b> 국면에 유리한 자산군 비중 상한을 적용하고, 
-                            Mean-Variance Optimization을 통해 기대수익(EV>0) 및 Sharpe Ratio를 극대화하는 최적 포트폴리오를 산출했습니다. 
-                            <br><i>*실시간 매크로 지표는 Supabase DB를 통해 검증된 최신 데이터를 사용합니다.</i>
+                        <div style="font-size: 0.85em; font-weight: 600; color: #444; margin-bottom: 8px;">매크로 및 밸류에이션 상세 근거</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <ul style="color: #444; font-size: 0.85em; line-height: 1.6; margin: 0; padding-left: 20px;">
+                                <li><b>성장(INDPRO)</b>: 전년비 {fmt_val(ind_y, '%')}</li>
+                                <li><b>물가(CPI)</b>: 전년비 {fmt_val(cpi_y, '%')}</li>
+                                <li><b>유동성</b>: 추세 {fmt_val(liq_t)}</li>
+                                <li><b>스트레스</b>: VIX {fmt_val(v_val)} ({fmt_val(str_s)})</li>
+                            </ul>
+                            <ul style="color: #444; font-size: 0.85em; line-height: 1.6; margin: 0; padding-left: 20px;">
+                                <li><b>버핏 지표 (US)</b>: {fmt_val(b_us, '%')} → <span style="font-weight:600; color:{'#d32f2f' if b_us and b_us > 115 else '#2e7d32'}">{b_us_label}</span></li>
+                                <li><b>버핏 지표 (KR)</b>: {fmt_val(b_kr, '%')} → <span style="font-weight:600; color:{'#d32f2f' if b_kr and b_kr > 115 else '#2e7d32'}">{b_kr_label}</span></li>
+                                <li style="list-style:none; font-size:0.85em; color:#888; margin-top:4px;">*버핏 지표: 시가총액 / GDP 비율 (100% 내외 적정)</li>
+                            </ul>
+                        </div>
+                        <div style="font-size: 0.82em; color: #666; margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 8px;">
+                            현재 <b>{r_label}</b> 국면과 시장 밸류에이션을 고려하여, 기대수익(EV>0) 및 위험 대비 수익률을 극대화하는 최적 비중을 산출했습니다.
                         </div>
                     </div>
                     """
