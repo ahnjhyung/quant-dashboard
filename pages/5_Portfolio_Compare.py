@@ -187,7 +187,7 @@ with st.sidebar:
     st.markdown("---")
 
     # Preset Selection
-    PRESETS = {
+    DEFAULT_PRESETS = {
         "Classic 60/40": {"SPY": 0.6, "TLT": 0.4},
         "All Weather": {"SPY": 0.30, "TLT": 0.40, "IEF": 0.15, "GLD": 0.075, "GSG": 0.075},
         "Permanent": {"SPY": 0.25, "TLT": 0.25, "GLD": 0.25, "SHY": 0.25},
@@ -195,10 +195,18 @@ with st.sidebar:
         "S&P 500 Only": {"SPY": 1.0}
     }
 
+    if "custom_presets" not in st.session_state:
+        st.session_state.custom_presets = {}
+
+    if "selected_presets" not in st.session_state:
+        st.session_state.selected_presets = ["Classic 60/40", "All Weather", "S&P 500 Only"]
+
+    PRESETS = {**DEFAULT_PRESETS, **st.session_state.custom_presets}
+
     selected_presets = st.multiselect(
         "Preset Strategies",
         list(PRESETS.keys()),
-        default=["Classic 60/40", "All Weather", "S&P 500 Only"]
+        key="selected_presets"
     )
 
     with st.expander("📚 전략 설명 보기"):
@@ -272,10 +280,11 @@ with st.expander("Custom Portfolio", expanded=not selected_presets):
                     if abs(total_w - 1.0) > 0.01:
                         weights = [w / total_w for w in weights]
                         st.info(f"비중이 100%로 정규화되었습니다 (기존 {total_w*100:.1f}%)")
-                    PRESETS[c_name] = dict(zip(tickers, weights))
-                    if c_name not in selected_presets:
-                        selected_presets.append(c_name)
+                    st.session_state.custom_presets[c_name] = dict(zip(tickers, weights))
+                    if c_name not in st.session_state.selected_presets:
+                        st.session_state.selected_presets = st.session_state.selected_presets + [c_name]
                     st.success(f"'{c_name}' 전략이 추가되었습니다.")
+                    st.rerun()
             except ValueError:
                 st.error("잘못된 비중값입니다. 숫자만 입력하세요.")
             except Exception as e:
