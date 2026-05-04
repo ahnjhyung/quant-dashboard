@@ -628,7 +628,7 @@ else:
                             fig_ef.add_trace(go.Scatter(
                                 x=ef_df["volatility"], y=ef_df["return"],
                                 mode="lines",
-                                name="Efficient Frontier",
+                                name="효율적투자선",
                                 line=dict(color="#1f77b4", width=2),
                             ))
                             # 최적점 마커
@@ -637,7 +637,7 @@ else:
                                 mode="markers+text",
                                 text=["최적점"],
                                 textposition="top center",
-                                marker=dict(size=14, color="#d62728", symbol="circle"),
+                                marker=dict(size=10, color="#d62728", symbol="circle"),
                                 name="최적 포트폴리오",
                                 showlegend=False,
                             ))
@@ -654,7 +654,7 @@ else:
                                     hovertemplate=f"{ast['ticker']}<br>수익률: {ast['expected_return']:.1f}%<br>변동성: {ast['volatility']:.1f}%<extra></extra>",
                                 ))
                             fig_ef.update_layout(
-                                title="Efficient Frontier",
+                                title="효율적투자선",
                                 height=400,
                                 plot_bgcolor="#ffffff",
                                 paper_bgcolor="#ffffff",
