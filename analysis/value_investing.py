@@ -674,11 +674,12 @@ class ValueInvestingAnalyzer:
 
     def quant_value_screen(self, tickers: list) -> list:
         """
-        Quant Value Screen (소형주 퀀트 가치투자)
-        - 제외 섹터: Financials, Utilities, Holding Companies
-        - 시가총액 하위권 필터링 (기본 20%, 리스트가 작으면 50%로 완화)
-        - F-Score >= 6 (기존 7에서 약간 완화하여 더 많은 후보군 확보)
+        Quant Value Screen (종합 퀀트 가치투자)
+        - 제외 섹터: Financials, Utilities (지주사는 제외하지 않음으로 완화)
+        - 시가총액: 전 범위를 대상으로 하되 시총 정보가 있는 종목만 포함
+        - F-Score >= 5 (기존 6에서 완화하여 더 많은 후보군 확보)
         - PBR (낮을수록 좋음) 순위 + GP/A (높을수록 좋음) 순위 합산
+        - GP/A 결측 시 ROA를 보완 지표로 사용
         """
         valid_tickers = []
         for ticker in tickers:
@@ -689,13 +690,14 @@ class ValueInvestingAnalyzer:
                 sector = info.get('sector', '')
                 industry = info.get('industry', '')
                 
-                # 제외 섹터 필터링
-                excluded_keywords = ['Financial', 'Utilities', 'Holding']
+                # 제외 섹터 필터링 (금융/유틸리티는 통상적인 퀀트 지표가 적용되지 않음)
+                excluded_keywords = ['Financial', 'Utilities']
                 if any(kw.lower() in sector.lower() or kw.lower() in industry.lower() for kw in excluded_keywords):
                     continue
                 
                 market_cap = info.get('marketCap', 0)
                 if not market_cap or market_cap == 0:
+                    # 시총 정보가 없으면 분석 제외
                     continue
                     
                 valid_tickers.append({
@@ -711,15 +713,8 @@ class ValueInvestingAnalyzer:
         if not valid_tickers:
             return []
             
-        # 시가총액 필터링 (리스트가 너무 작으면 완화)
-        valid_tickers.sort(key=lambda x: x['market_cap'])
-        if len(valid_tickers) < 50:
-            cutoff_pct = 0.5  # 50%
-        else:
-            cutoff_pct = 0.3  # 30% (20%에서 약간 상향)
-            
-        cutoff_index = max(1, int(len(valid_tickers) * cutoff_pct))
-        candidate_tickers = valid_tickers[:cutoff_index]
+        # [변경] 시가총액 하위권 필터링 제거 -> 전 종목 대상
+        candidate_tickers = valid_tickers
         
         screened_data = []
         for item in candidate_tickers:
@@ -727,26 +722,29 @@ class ValueInvestingAnalyzer:
             stock = item['stock']
             info = item['info']
             try:
-                # F-Score 필터링 (6점 이상으로 완화)
+                # F-Score 필터링 (5점 이상으로 완화)
                 fscore_data = self.piotroski_score(ticker)
-                if fscore_data.get('score', 0) < 6:
+                f_score = fscore_data.get('score', 0)
+                if f_score < 5:
                     continue
                     
                 pbr = info.get('priceToBook')
                 if not pbr or pbr <= 0:
+                    # PBR 0 이하는 데이터 오류 또는 자본잠식이므로 제외
                     continue
                     
-                # GP/A 계산
+                # GP/A 계산 (Gross Profit / Total Assets)
                 gross_profit = info.get('grossProfits')
                 total_assets = info.get('totalAssets')
                 
                 if gross_profit is None:
                     try:
                         inc = stock.income_stmt
-                        if not inc.empty and 'Gross Profit' in inc.index:
-                            gross_profit = inc.loc['Gross Profit'].iloc[0]
-                        elif not inc.empty and 'GrossProfit' in inc.index:
-                             gross_profit = inc.loc['GrossProfit'].iloc[0]
+                        if not inc.empty:
+                            for idx in ['Gross Profit', 'GrossProfit', 'Total Revenue']:
+                                if idx in inc.index:
+                                    gross_profit = inc.loc[idx].iloc[0]
+                                    break
                     except:
                         pass
                 
@@ -758,11 +756,12 @@ class ValueInvestingAnalyzer:
                     except:
                         pass
                         
+                # GP/A가 없으면 ROA를 fallback으로 사용
                 if gross_profit is None or total_assets is None or total_assets <= 0:
-                    # GP/A가 없으면 PER/PBR 등으로 보완하거나 건너뜀
-                    continue
-                    
-                gpa = gross_profit / total_assets
+                    roa = info.get('returnOnAssets', 0) or 0
+                    gpa = roa # Fallback
+                else:
+                    gpa = gross_profit / total_assets
                 
                 screened_data.append({
                     'ticker': ticker,
@@ -771,13 +770,12 @@ class ValueInvestingAnalyzer:
                     'market_cap': item['market_cap'],
                     'pbr': pbr,
                     'gpa': gpa,
-                    'fscore': fscore_data.get('score', 0)
+                    'fscore': f_score
                 })
             except Exception as e:
                 print(f"⚠️ Quant Value Screen 지표 에러 [{ticker}]: {e}")
                 
         if not screened_data:
-            # 만약 아무것도 없으면 F-Score 필터를 더 완화해서 다시 시도하거나 빈 리스트 반환
             return []
             
         # PBR Rank (낮을수록 좋음)

@@ -426,7 +426,7 @@ if run_analysis and ticker_input:
 # ── Discovery (가치투자 종목발굴) ──────────────────────────────────────
 if mode == "종목발굴 (스크린)":
     st.markdown("## 퀀트 가치투자 종목 발굴")
-    st.markdown("**전략**: 소형주(하위 20%) + F-Score 7점 이상 + PBR & GP/A 복합 순위 상위 50선")
+    st.markdown("**전략**: 전 종목 대상 + F-Score 5점 이상 + PBR & GP/A 복합 순위 상위 50선")
     
     if run_discovery:
         # 1. 확장된 대상 티커 리스트
@@ -498,7 +498,7 @@ if mode == "종목발굴 (스크린)":
                         # Streamlit 특성상 여기서 직접 '개별 종목 분석'으로 이동시키려면 ticker_input을 세션에 넣고 리런해야 함.
                         st.info(f"사이드바에서 모드를 '개별 종목 분석'으로 변경하고 {selected_ticker}를 입력하세요.")
                 else:
-                    st.warning("조건(소형주 + F-Score 7점이상)을 만족하는 종목이 현재 리스트에 없습니다.")
+                    st.warning("조건(F-Score 5점 이상 + PBR & GP/A 데이터 존재)을 만족하는 종목이 현재 리스트에 없습니다.")
                     st.info("KOSPI 200, S&P 500 등 더 넓은 리스트로 확장하거나 필터 조건을 완화해야 합니다.")
             except Exception as e:
                 st.error(f"스크리닝 중 오류 발생: {e}")
