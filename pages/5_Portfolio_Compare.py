@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from analysis.macro_portfolio_engine import MacroPortfolioEngine
+from analysis.macro_optimizer import MacroOptimizer
 from data_collectors.macro_backfiller import MacroBackfiller
 from datetime import datetime
 import numpy as np
@@ -364,7 +365,7 @@ else:
                     """, unsafe_allow_html=True)
 
             # ── Tabs ─────────────────────────────────────────────
-            tab_growth, tab_risk = st.tabs(["성장 추이", "리스크"])
+            tab_growth, tab_risk, tab_optimizer = st.tabs(["성장 추이", "리스크", "🧠 매크로 최적화"])
 
             with tab_growth:
                 # 혹시 모를 결측치에 대비해 각 전략의 첫 번째 유효 데이터를 기준으로 100으로 정규화
@@ -466,6 +467,166 @@ else:
                         margin=dict(l=0, r=0, t=40, b=0),
                     )
                     st.plotly_chart(fig_bar, use_container_width=True)
+
+            with tab_optimizer:
+                st.markdown("### 매크로 지표 기반 최적 포트폴리오")
+                st.markdown('<div class="info-box">현재 매크로 국면(성장·인플레·유동성·스트레스)을 종합 분석하여 '
+                            'Mean-Variance Optimization으로 Sharpe Ratio가 최대인 배분을 추천합니다.<br>'
+                            '<b>EV(기대값) = 기대수익률 − 무위험이자율 &gt; 0</b>인 배분만 제안합니다.</div>',
+                            unsafe_allow_html=True)
+
+                opt_col1, opt_col2 = st.columns([1, 3])
+                with opt_col1:
+                    lookback = st.selectbox("수익률 산출 기간", [3, 5, 7, 10], index=1, format_func=lambda x: f"{x}년")
+                    rf_pct = st.number_input("무위험이자율 (%)", value=4.0, step=0.5, min_value=0.0, max_value=15.0)
+
+                with opt_col2:
+                    if st.button("🔍 최적 포트폴리오 산출", type="primary"):
+                        optimizer = MacroOptimizer(rf=rf_pct / 100.0)
+                        with st.spinner("매크로 지표 분석 및 최적화 중..."):
+                            opt_result = optimizer.recommend(lookback_years=lookback)
+
+                        if "error" in opt_result:
+                            st.error(opt_result["error"])
+                        else:
+                            st.session_state._opt_result = opt_result
+
+                # 결과 표시
+                if "_opt_result" in st.session_state:
+                    opt_result = st.session_state._opt_result
+                    snap = opt_result["regime"]
+                    metrics = opt_result["metrics"]
+
+                    # ── 국면 카드 ──
+                    regime_colors = {"Goldilocks": "#2e7d32", "Reflation": "#e65100",
+                                     "Stagflation": "#c62828", "Deflation": "#1565c0"}
+                    regime_labels = {"Goldilocks": "골디락스 (적정성장·저물가)",
+                                     "Reflation": "리플레이션 (성장·물가 동반상승)",
+                                     "Stagflation": "스태그플레이션 (저성장·고물가)",
+                                     "Deflation": "디플레이션 (저성장·저물가)"}
+                    r_color = regime_colors.get(snap.regime, "#333")
+                    r_label = regime_labels.get(snap.regime, snap.regime)
+
+                    st.markdown(f"""
+                    <div style="background:linear-gradient(135deg, {r_color}15, {r_color}08); 
+                                border-left: 4px solid {r_color}; border-radius: 6px; 
+                                padding: 16px 20px; margin: 12px 0;">
+                        <div style="font-size:0.75em; color:#666; text-transform:uppercase; 
+                                    font-weight:600; letter-spacing:0.05em;">현재 매크로 국면</div>
+                        <div style="font-size:1.4em; font-weight:700; color:{r_color}; margin:4px 0;">
+                            {r_label}</div>
+                        <div style="font-size:0.82em; color:#555; font-family:'JetBrains Mono',monospace;">
+                            CPI YoY: {snap.details.get('cpi_yoy','N/A')}% · 
+                            INDPRO YoY: {snap.details.get('indpro_yoy','N/A')}% · 
+                            VIX: {snap.details.get('vix','N/A')} · 
+                            스트레스: {snap.details.get('stress_score','N/A')}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # ── 핵심 지표 카드 ──
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    ev_class = "positive" if metrics['ev'] > 0 else "negative"
+                    with mc1:
+                        st.markdown(f'<div class="stat-card"><div class="label">기대수익률</div>'
+                                    f'<div class="value">{metrics["expected_return"]:+.1f}%</div></div>',
+                                    unsafe_allow_html=True)
+                    with mc2:
+                        st.markdown(f'<div class="stat-card"><div class="label">변동성</div>'
+                                    f'<div class="value">{metrics["volatility"]:.1f}%</div></div>',
+                                    unsafe_allow_html=True)
+                    with mc3:
+                        st.markdown(f'<div class="stat-card"><div class="label">SHARPE</div>'
+                                    f'<div class="value">{metrics["sharpe"]:.3f}</div></div>',
+                                    unsafe_allow_html=True)
+                    with mc4:
+                        st.markdown(f'<div class="stat-card"><div class="label">EV (초과수익)</div>'
+                                    f'<div class="value"><span class="{ev_class}">{metrics["ev"]:+.1f}%</span></div></div>',
+                                    unsafe_allow_html=True)
+
+                    # ── 차트: 파이 + Efficient Frontier ──
+                    chart_l, chart_r = st.columns(2)
+                    with chart_l:
+                        w_data = opt_result["weights"]
+                        fig_pie = go.Figure(data=[go.Pie(
+                            labels=list(w_data.keys()),
+                            values=[v * 100 for v in w_data.values()],
+                            textinfo="label+percent",
+                            textfont=dict(size=12),
+                            marker=dict(colors=CHART_COLORS[:len(w_data)]),
+                            hole=0.4,
+                        )])
+                        fig_pie.update_layout(
+                            title="최적 자산배분",
+                            height=400,
+                            plot_bgcolor="#ffffff",
+                            paper_bgcolor="#ffffff",
+                            font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333"),
+                            margin=dict(l=0, r=0, t=40, b=0),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+                    with chart_r:
+                        ef = opt_result.get("efficient_frontier", [])
+                        if ef:
+                            ef_df = pd.DataFrame(ef)
+                            fig_ef = go.Figure()
+                            fig_ef.add_trace(go.Scatter(
+                                x=ef_df["volatility"], y=ef_df["return"],
+                                mode="lines",
+                                name="Efficient Frontier",
+                                line=dict(color="#1f77b4", width=2),
+                            ))
+                            # 최적점 마커
+                            fig_ef.add_trace(go.Scatter(
+                                x=[metrics["volatility"]], y=[metrics["expected_return"]],
+                                mode="markers+text",
+                                text=["최적점"],
+                                textposition="top center",
+                                marker=dict(size=14, color="#d62728", symbol="star"),
+                                name="최적 포트폴리오",
+                                showlegend=False,
+                            ))
+                            # 개별 자산 마커
+                            for ast in opt_result.get("asset_stats", []):
+                                fig_ef.add_trace(go.Scatter(
+                                    x=[ast["volatility"]], y=[ast["expected_return"]],
+                                    mode="markers+text",
+                                    text=[ast["ticker"]],
+                                    textposition="top center",
+                                    textfont=dict(size=10, color="#888"),
+                                    marker=dict(size=8, color="#999", opacity=0.6),
+                                    showlegend=False,
+                                    hovertemplate=f"{ast['ticker']}<br>수익률: {ast['expected_return']:.1f}%<br>변동성: {ast['volatility']:.1f}%<extra></extra>",
+                                ))
+                            fig_ef.update_layout(
+                                title="Efficient Frontier",
+                                height=400,
+                                plot_bgcolor="#ffffff",
+                                paper_bgcolor="#ffffff",
+                                xaxis=dict(title="변동성 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
+                                yaxis=dict(title="기대수익률 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
+                                font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333"),
+                                margin=dict(l=0, r=0, t=40, b=0),
+                            )
+                            st.plotly_chart(fig_ef, use_container_width=True)
+
+                    # ── 상세 테이블 ──
+                    st.markdown("#### 자산별 상세")
+                    ast_df = pd.DataFrame(opt_result.get("asset_stats", []))
+                    if not ast_df.empty:
+                        ast_df.columns = ["티커", "기대수익률 (%)", "변동성 (%)", "비중 (%)"]
+                        st.dataframe(ast_df.set_index("티커"), use_container_width=True)
+
+                    # ── 백테스트에 적용 버튼 ──
+                    st.markdown("---")
+                    if st.button("📊 이 포트폴리오로 백테스트 비교에 추가"):
+                        opt_weights = opt_result["weights"]
+                        opt_name = f"Macro Optimal ({snap.regime})"
+                        st.session_state.custom_presets[opt_name] = opt_weights
+                        st.session_state._pending_preset = opt_name
+                        st.rerun()
 
             # ── Detailed Table ───────────────────────────────────
             st.markdown("### 상세 통계")
