@@ -97,69 +97,7 @@ class MacroDataCollector:
             except Exception as e:
                 print(f"    [ERROR] yfinance {ticker} 수집 실패: {e}")
 
-    def calculate_and_save_buffet_indicator(self):
-        """
-        Buffet Indicator (Market Cap to GDP) 산출 및 저장
-        - US: Wilshire 5000 (WILL5000PR) / GDP (FRED) * Multiplier
-        - KR: (KOSPI + KOSDAQ) Proxy / KR GDP (FRED)
-        """
-        if not self.fred: return
 
-        # 1. US Buffet Indicator (Use S&P 500 as proxy since Wilshire 5000 was removed from FRED)
-        print("[*] Calculating BUFFET_INDICATOR (US)...")
-        try:
-            # S&P 500 from yfinance (already collected in collect_yfinance_data but we fetch again for calculation)
-            sp500 = yf.download("^GSPC", period="5d", progress=False)
-            gdp = self.fred.get_series('GDP').dropna()
-            
-            if not sp500.empty and not gdp.empty:
-                val_mkt = float(sp500['Close'].iloc[-1])
-                val_gdp = float(gdp.iloc[-1])
-                
-                # Formula: (S&P 500 Index / GDP) * Scaling
-                # Historically, S&P 500 / GDP ratio at 1.0 (100%) roughly corresponds to Fair Value
-                # in a modern context. We scale to make it look like the traditional Buffett Indicator.
-                buffet_us = (val_mkt * 10.5 / val_gdp) * 100 
-                date_str = sp500.index[-1].strftime("%Y-%m-%d")
-                
-                self.db.upsert_macro_indicator("BUFFET_INDICATOR_US", date_str, buffet_us)
-                print(f"    [OK] BUFFET_INDICATOR_US ({date_str}): {buffet_us:.2f}%")
-        except Exception as e:
-            print(f"    [ERROR] US BUFFET_INDICATOR 산출 실패: {e}")
-
-        # 2. KR Buffet Indicator (Combined KOSPI + KOSDAQ)
-        print("[*] Calculating BUFFET_INDICATOR (KR)...")
-        try:
-            ks11 = yf.download("^KS11", period="5d", progress=False)
-            kq11 = yf.download("^KQ11", period="5d", progress=False)
-            
-            # Korea Nominal GDP (Quarterly, Millions of KRW, Seasonally Adjusted)
-            try:
-                # Key: NGDPSAXDCKRQ
-                kr_gdp = self.fred.get_series('NGDPSAXDCKRQ').dropna() 
-            except:
-                # Fallback: Approx 2400 Trillion KRW (Quarterly 600 Trillion)
-                kr_gdp = pd.Series([600000000.0], index=[datetime.now()]) 
-
-            if not ks11.empty and not kq11.empty and not kr_gdp.empty:
-                val_ks = float(ks11['Close'].iloc[-1])
-                val_kq = float(kq11['Close'].iloc[-1])
-                val_kr_gdp_q = float(kr_gdp.iloc[-1]) # In Millions KRW
-                
-                # Proxy for Market Cap (Trillion KRW)
-                # KOSPI factor: ~0.78, KOSDAQ factor: ~0.47
-                mkt_cap_trillion = (val_ks * 0.78) + (val_kq * 0.47)
-                
-                # Annualized GDP in Trillion KRW
-                gdp_trillion_annual = (val_kr_gdp_q / 1000000.0) * 4
-                
-                buffet_kr = (mkt_cap_trillion / gdp_trillion_annual) * 100
-                
-                date_str = ks11.index[-1].strftime("%Y-%m-%d")
-                self.db.upsert_macro_indicator("BUFFET_INDICATOR_KR", date_str, buffet_kr)
-                print(f"    [OK] BUFFET_INDICATOR_KR ({date_str}): {buffet_kr:.2f}% (KOSPI+KOSDAQ / Annualized GDP)")
-        except Exception as e:
-            print(f"    [ERROR] KR BUFFET_INDICATOR 산출 실패: {e}")
 
     def calculate_and_save_net_liquidity(self):
         """
@@ -192,7 +130,6 @@ class MacroDataCollector:
         self.collect_fred_data()
         self.collect_yfinance_data()
         self.calculate_and_save_net_liquidity()
-        self.calculate_and_save_buffet_indicator()
         print("=== 매크로 데이터 통합 수집 완료 ===")
 
 if __name__ == "__main__":

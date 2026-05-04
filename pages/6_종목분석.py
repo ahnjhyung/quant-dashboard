@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 
-st.set_page_config(page_title="퀀트 밸류 스크린", layout="wide")
+st.set_page_config(page_title="종목 분석 및 매크로", layout="wide")
 
 # ── CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
@@ -53,8 +53,8 @@ h1, h2, h3 { color: #111111; font-weight: 600; }
 
 
 # ── Title ────────────────────────────────────────────────────────────
-st.markdown("# 퀀트 밸류 스크린")
-st.markdown("가치 지표(PBR, GP/A, F-Score)를 결합한 퀀트 전략으로 저평가 우량주 50개를 발굴합니다.")
+st.markdown("# 종목 분석 대시보드")
+st.markdown("가치 분석(DCF, F-Score) 및 기술적 분석(Swing)을 결합하여 종목을 정밀 진단합니다.")
 
 
 # ── Session State Init ───────────────────────────────────────────────
@@ -66,19 +66,14 @@ with st.sidebar:
     st.markdown("### Mode")
     mode = st.radio(
         "분석 모드 선택",
-        ["종목발굴 (스크린)", "개별 종목 분석", "매크로 대시보드"],
+        ["개별 종목 분석", "매크로 대시보드"],
         index=0, label_visibility="collapsed"
     )
     st.session_state.fs_mode = mode
 
     st.markdown("---")
 
-    if mode == "종목발굴 (스크린)":
-        st.markdown("### 스크리닝 설정")
-        market_choice = st.radio("시장 선택", ["KOSPI 200", "S&P 500", "Mixed (KOR+US)"], index=0)
-        run_discovery = st.button("종목 발굴 시작", use_container_width=True)
-    else:
-        run_discovery = False
+
 
     if mode == "개별 종목 분석":
         st.markdown("### 개별 종목 분석")
@@ -94,10 +89,12 @@ with st.sidebar:
             format_func=lambda x: {"6mo": "6개월", "1y": "1년", "2y": "2년", "5y": "5년"}[x]
         )
         run_analysis = st.button("분석 실행", use_container_width=True)
+        run_screening = False
     else:
         ticker_input = ""
         analysis_period = "1y"
         run_analysis = False
+        run_screening = False
 
     # Macro mode has no sidebar inputs needed
     run_macro = (mode == "매크로 대시보드")
@@ -423,87 +420,7 @@ if run_analysis and ticker_input:
                     st.markdown(f"**{k}:** {v}")
 
 
-# ── Discovery (가치투자 종목발굴) ──────────────────────────────────────
-if mode == "종목발굴 (스크린)":
-    st.markdown("## 퀀트 가치투자 종목 발굴")
-    st.markdown("**전략**: 전 종목 대상 + F-Score 5점 이상 + PBR & GP/A 복합 순위 상위 50선")
-    
-    if run_discovery:
-        # 1. 확장된 대상 티커 리스트
-        KOSPI_COMPREHENSIVE = [
-            "005930.KS", "000660.KS", "035420.KS", "035720.KS", "005380.KS", "000270.KS", "068270.KS", "051910.KS", "006400.KS", "005490.KS",
-            "105560.KS", "055550.KS", "032830.KS", "003550.KS", "012330.KS", "015760.KS", "011780.KS", "010950.KS", "034220.KS", "000810.KS",
-            "066570.KS", "003670.KS", "030240.KS", "033780.KS", "017670.KS", "009150.KS", "036570.KS", "086790.KS", "004020.KS", "010130.KS",
-            "373220.KS", "207940.KS", "000720.KS", "000100.KS", "008930.KS", "012450.KS", "096770.KS", "042700.KS", "011070.KS", "010140.KS",
-            "001040.KS", "001450.KS", "002380.KS", "003410.KS", "003490.KS", "004170.KS", "004800.KS", "004990.KS", "005830.KS", "005940.KS",
-            "007070.KS", "008770.KS", "009540.KS", "009830.KS", "011170.KS", "011210.KS", "012750.KS", "014680.KS", "016360.KS", "018260.KS",
-            "018880.KS", "021240.KS", "024110.KS", "028050.KS", "028260.KS", "028670.KS", "029780.KS", "032640.KS", "034020.KS", "034730.KS",
-            "036460.KS", "047040.KS", "047050.KS", "047810.KS", "051900.KS", "069500.KS", "069960.KS", "071050.KS", "078930.KS", "086280.KS",
-            "000080.KS", "000210.KS", "000240.KS", "000670.KS", "000720.KS", "000990.KS", "001040.KS", "001230.KS", "001430.KS", "001450.KS",
-            "001500.KS", "001740.KS", "001800.KS", "002350.KS", "002380.KS", "002790.KS", "003000.KS", "003090.KS", "003230.KS", "003410.KS",
-            "003490.KS", "003520.KS", "003550.KS", "003670.KS", "003850.KS", "004000.KS", "004020.KS", "004170.KS", "004370.KS", "004490.KS"
-        ]
-        SNP_COMPREHENSIVE = [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "BRK-B", "TSLA", "V", "UNH",
-            "JNJ", "XOM", "WMT", "MA", "PG", "LLY", "AVGO", "HD", "CVX", "ORCL",
-            "ABBV", "KO", "PEP", "MRK", "BAC", "COST", "PFE", "TMO", "MCD", "CSCO",
-            "ACN", "ABT", "ADBE", "LIN", "VZ", "DIS", "WFC", "INTC", "TXN", "PM",
-            "DHR", "NFLX", "AMD", "RTX", "HON", "NEE", "MS", "AMAT", "LOW", "COP",
-            "IBM", "GS", "BA", "GE", "CAT", "UPS", "T", "DE", "LMT", "QCOM",
-            "BLK", "INTU", "AXP", "AMGN", "ISRG", "MDLZ", "TJX", "SPGI", "PLD", "SYK",
-            "CI", "EL", "GILD", "CB", "ADI", "BDX", "REGN", "ETN", "MMC", "VRTX",
-            "LRCX", "BSX", "ZTS", "AMT", "PGR", "MU", "PANW", "SNPS", "FI", "CDNS",
-            "NOW", "EQIX", "TGT", "ABNB", "COST", "CRM", "CMG", "DELL", "MAR", "NKE"
-        ]
-        
-        if "KOSPI" in market_choice:
-            target_tickers = KOSPI_COMPREHENSIVE
-        elif "S&P" in market_choice:
-            target_tickers = SNP_COMPREHENSIVE
-        else:
-            target_tickers = KOSPI_COMPREHENSIVE[:40] + SNP_COMPREHENSIVE[:40]
-            
-        with st.spinner(f"{len(target_tickers)}개 종목 스크리닝 중... (금융/지주사 제외, PBR & GP/A 분석)"):
-            try:
-                results = value_analyzer.quant_value_screen(target_tickers)
-                
-                if results:
-                    st.success(f"조건을 만족하는 {len(results)}개 종목을 발견했습니다.")
-                    
-                    df_q = pd.DataFrame(results).head(50)
-                    # 시총 표시 변환
-                    df_q['market_cap_str'] = df_q['market_cap'].apply(lambda x: f"${x/1e9:.2f}B" if x > 1e9 else f"${x/1e6:.1f}M")
-                    
-                    display_cols = ['combined_rank', 'ticker', 'name', 'market_cap_str', 'fscore', 'pbr', 'gpa', 'sector']
-                    df_disp = df_q[display_cols].copy()
-                    df_disp.columns = ['Rank', 'Ticker', 'Name', 'Market Cap', 'F-Score', 'PBR', 'GP/A', 'Sector']
-                    
-                    st.dataframe(
-                        df_disp.style.format({
-                            'PBR': "{:.2f}",
-                            'GP/A': "{:.3f}",
-                        }).background_gradient(subset=['F-Score'], cmap='Greens')
-                          .background_gradient(subset=['PBR'], cmap='RdYlGn_r')
-                          .background_gradient(subset=['GP/A'], cmap='RdYlGn'),
-                        use_container_width=True, hide_index=True
-                    )
-                    
-                    # ── 상세 분석 연결 ──
-                    st.markdown("---")
-                    st.markdown("### 상세 분석 바로가기")
-                    selected_ticker = st.selectbox("종목 선택", df_q['ticker'].tolist())
-                    if st.button("선택 종목 상세 분석"):
-                        st.session_state.fs_mode = "개별 종목 분석"
-                        # 이 부분은 페이지 리프레시나 상태 변경이 필요함. 
-                        # Streamlit 특성상 여기서 직접 '개별 종목 분석'으로 이동시키려면 ticker_input을 세션에 넣고 리런해야 함.
-                        st.info(f"사이드바에서 모드를 '개별 종목 분석'으로 변경하고 {selected_ticker}를 입력하세요.")
-                else:
-                    st.warning("조건(F-Score 5점 이상 + PBR & GP/A 데이터 존재)을 만족하는 종목이 현재 리스트에 없습니다.")
-                    st.info("KOSPI 200, S&P 500 등 더 넓은 리스트로 확장하거나 필터 조건을 완화해야 합니다.")
-            except Exception as e:
-                st.error(f"스크리닝 중 오류 발생: {e}")
-    else:
-        st.info("왼쪽 사이드바에서 '종목 발굴 실행' 버튼을 클릭하세요.")
+
 
 
 # ── Macro Dashboard ──────────────────────────────────────────────────
@@ -547,8 +464,6 @@ if run_macro:
         "GC=F": "금 선물 — 안전자산 / 인플레 헤지",
         "CL=F": "원유 선물(WTI) — 에너지 / 인플레 선행",
         "DX-Y.NYB": "달러 인덱스(DXY) — 달러 강세 측정",
-        "BUFFET_INDICATOR_US": "US 버핏 지수 (시가총액 / GDP) — 100% 초과 시 고평가",
-        "BUFFET_INDICATOR_KR": "KR 버핏 지수 (시가총액 / GDP 추정) — 한국 시장 저평가 여부",
     }
 
     # Latest values card row
@@ -559,8 +474,8 @@ if run_macro:
         st.markdown("### 주요 지표 현재값")
         cols = st.columns(6)
         display_keys = [("DGS10", "미국 10년 금리", "%"), ("T10Y2Y", "10Y-2Y 스프레드", "%"),
-                        ("VIXCLS", "VIX", ""), ("BUFFET_INDICATOR_US", "US 버핏지수", "%"),
-                        ("BUFFET_INDICATOR_KR", "KR 버핏지수", "%"), ("BAMLH0A0HYM2", "HY 스프레드", "%")]
+                        ("VIXCLS", "VIX", ""), ("NET_LIQUIDITY", "순유동성", "B"),
+                        ("DEXKOUS", "원/달러 환율", "원"), ("BAMLH0A0HYM2", "HY 스프레드", "%")]
         for i, (key, label, unit) in enumerate(display_keys):
             d = latest.get(key, {})
             cur = d.get("current", 0)
@@ -568,11 +483,7 @@ if run_macro:
             delta = cur - prev
             delta_str = f"{delta:+.2f}" if delta != 0 else "-"
             
-            # 버핏지수 색상 반전 (낮을수록 좋음)
-            if "BUFFET" in key:
-                color = "signal-buy" if cur < 80 else ("signal-sell" if cur > 120 else "signal-hold")
-            else:
-                color = "" # Default
+            color = "" # Default
                 
             with cols[i]:
                 st.markdown(f"""
@@ -628,63 +539,8 @@ if run_macro:
     else:
         st.warning("Supabase에 해당 지표 데이터가 없습니다. `macro_data_collector.py`를 먼저 실행하세요.")
 
-    # Buffett Indicator (US & KR)
-    # Buffett Indicator (US & KR) - Combined Chart
-    st.markdown("### 🌎 Global Buffett Indicator (Market Temperature)")
-    st.info("버핏 지수 = (전체 시가총액 / GDP) × 100. 75~90% 적정, 115% 이상 과열. (미국: S&P 500 프록시, 한국: KOSPI+KOSDAQ 시총 프록시)")
-    
-    with st.spinner("버핏 지수 시계열 분석 중..."):
-        buff_us = db.get_macro_history("BUFFET_INDICATOR_US", days=period_days)
-        buff_kr = db.get_macro_history("BUFFET_INDICATOR_KR", days=period_days)
-        
-        fig_buff = go.Figure()
-        
-        # US Data
-        if buff_us is not None and not buff_us.empty:
-            fig_buff.add_trace(go.Scatter(
-                x=buff_us.index, y=buff_us['value'],
-                name="US Buffett Index",
-                line=dict(color="#1f77b4", width=2),
-                fill='tozeroy', fillcolor='rgba(31,119,180,0.05)',
-                mode='lines+markers' if len(buff_us) < 10 else 'lines'
-            ))
-            
-        # KR Data
-        if buff_kr is not None and not buff_kr.empty:
-            fig_buff.add_trace(go.Scatter(
-                x=buff_kr.index, y=buff_kr['value'],
-                name="KR Buffett Index",
-                line=dict(color="#d32f2f", width=2),
-                fill='tozeroy', fillcolor='rgba(211,47,47,0.05)',
-                mode='lines+markers' if len(buff_kr) < 10 else 'lines'
-            ))
-            
-        # Add Reference Lines
-        fig_buff.add_hline(y=100, line_dash="dash", line_color="#888", annotation_text="Fair Value (100%)", annotation_position="top left")
-        fig_buff.add_hline(y=120, line_dash="dot", line_color="#d32f2f", annotation_text="Overvalued", annotation_position="top left")
-        fig_buff.add_hline(y=80, line_dash="dot", line_color="#2e7d32", annotation_text="Undervalued", annotation_position="bottom left")
-        
-        fig_buff.update_layout(
-            height=450,
-            plot_bgcolor="#fff", paper_bgcolor="#fff",
-            font=dict(family=FONT_FAMILY, color="#333"),
-            legend=dict(orientation="h", y=1.1, x=0),
-            margin=dict(l=0, r=0, t=30, b=0),
-            hovermode="x unified",
-            xaxis=dict(gridcolor="#f0f0f0", title="Date"),
-            yaxis=dict(gridcolor="#f0f0f0", title="Indicator (%)", range=[0, max(250, (buff_us['value'].max() if buff_us is not None else 0), (buff_kr['value'].max() if buff_kr is not None else 0)) + 20]),
-        )
-        st.plotly_chart(fig_buff, use_container_width=True)
-        
-    col_desc1, col_desc2 = st.columns(2)
-    with col_desc1:
-        st.caption("🇺🇸 US Formula: (Wilshire 5000 / GDP) × 100 (Proxy)")
-    with col_desc2:
-        st.caption("🇰🇷 KR Formula: (KOSPI Market Cap / GDP) × 100 (Proxy)")
 
 
 # ── Default State ────────────────────────────────────────────────────
 if mode == "개별 종목 분석" and not run_analysis:
     st.info("사이드바에서 티커를 입력하고 '분석 실행' 버튼을 클릭하세요.")
-elif mode == "종목발굴 (스크린)" and not run_discovery:
-    st.info("왼쪽 사이드바에서 '종목 발굴 시작' 버튼을 클릭하세요.")

@@ -121,15 +121,6 @@ class MacroOptimizer:
 
         details["stress_score"] = round(stress_score, 3)
 
-        # 버핏 지표 수집: BUFFET_INDICATOR_US, BUFFET_INDICATOR_KR
-        buffet_us_df = self.db.get_macro_history("BUFFET_INDICATOR_US", days=7)
-        if buffet_us_df is not None and not buffet_us_df.empty:
-            details["buffet_us"] = round(float(buffet_us_df["value"].iloc[-1]), 2)
-        
-        buffet_kr_df = self.db.get_macro_history("BUFFET_INDICATOR_KR", days=7)
-        if buffet_kr_df is not None and not buffet_kr_df.empty:
-            details["buffet_kr"] = round(float(buffet_kr_df["value"].iloc[-1]), 2)
-
         # 4사분면 국면 분류
         if growth_trend and not inflation_trend:
             regime = "Goldilocks"

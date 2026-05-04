@@ -2,13 +2,10 @@
 가치투자 분석 엔진
 ==================
 - DCF (Discounted Cash Flow) 내재가치 계산
-- 그레이엄 넘버 (Benjamin Graham 안전마진 공식)
 - 피오트로스키 F-Score (재무 건전성 9점 만점)
-- 조엘 그린블라트 마법공식 (Magic Formula)
 - 종합 가치투자 스크리닝
 """
 
-import math
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -23,7 +20,7 @@ class ValueInvestingAnalyzer:
         analyzer = ValueInvestingAnalyzer()
         score = analyzer.piotroski_score("005930.KS")
         intrinsic = analyzer.dcf_valuation("AAPL", fcf=100e9, growth_rate=0.08)
-        ranked = analyzer.magic_formula_rank(["AAPL", "MSFT", "GOOG"])
+        full = analyzer.full_value_analysis("AAPL")
     """
 
     def __init__(self):
@@ -161,26 +158,6 @@ class ValueInvestingAnalyzer:
             }
         }
 
-    def graham_number(self, eps: float, book_value_per_share: float) -> float:
-        """
-        벤저민 그레이엄 넘버 계산
-        
-        공식: √(22.5 × EPS × BPS)
-        
-        - 22.5 = PER 15 × PBR 1.5의 곱
-        - 결과값이 현재 주가보다 높으면 저평가 신호
-        
-        Args:
-            eps: 주당순이익 (EPS)
-            book_value_per_share: 주당순자산 (BPS)
-            
-        Returns:
-            그레이엄 넘버 (float)
-        """
-        if eps <= 0 or book_value_per_share <= 0:
-            return 0.0
-        return round(math.sqrt(22.5 * eps * book_value_per_share), 2)
-
     def piotroski_score(self, ticker: str) -> dict:
         """
         피오트로스키 F-Score 계산 (0-9점)
@@ -188,25 +165,9 @@ class ValueInvestingAnalyzer:
         수익성(4점) + 레버리지/유동성(3점) + 효율성(2점) = 9점 만점
         - 8-9점: 강한 매수 신호 (재무 우량주)
         - 0-2점: 강한 매도 신호 (재무 불량)
-        
-        Returns:
-            {
-                'score': 7,
-                'category': 'Strong (매수)',
-                'details': {
-                    'ROA_positive': True,
-                    'OCF_positive': True,
-                    'ROA_improved': True,
-                    'accruals_low': False,
-                    ...
-                }
-            }
         """
         stock_data = self.get_stock_info(ticker)
         info = stock_data.get('info', {})
-        income = stock_data.get('income')
-        balance = stock_data.get('balance')
-        cashflow = stock_data.get('cashflow')
         
         scores = {}
         
@@ -217,41 +178,33 @@ class ValueInvestingAnalyzer:
             scores['F1_ROA_positive'] = roa > 0
             
             # F2: 영업현금흐름(OCF) > 0
-            ocf = 0
-            if cashflow is not None and not cashflow.empty:
-                try:
-                    ocf = cashflow.loc['Operating Cash Flow'].iloc[0]
-                except:
-                    pass
+            ocf = info.get('operatingCashflow', 0) or 0
             scores['F2_OCF_positive'] = ocf > 0
             
-            # F3: ROA 전년 대비 개선
-            # Yahoo Finance는 단일 연도만 제공 → 근사치로 처리
-            scores['F3_ROA_improved'] = info.get('returnOnAssets', 0) > 0.03  # proxy
+            # F3: ROA 전년 대비 개선 (proxy)
+            scores['F3_ROA_improved'] = info.get('returnOnAssets', 0) > 0.03  
             
             # F4: 발생항목 (Accruals = OCF/자산 > ROA)
-            total_assets = info.get('totalAssets', 1)
-            total_assets = total_assets if total_assets else 1
-            ocf_roa = ocf / total_assets if total_assets else 0
+            total_assets = info.get('totalAssets', 1) or 1
+            ocf_roa = ocf / total_assets
             scores['F4_accruals_low'] = ocf_roa > roa
             
             # === 레버리지 / 유동성 ===
-            # F5: 장기부채 비율 감소
+            # F5: 장기부채 비율 감소 (proxy)
             debt_to_equity = info.get('debtToEquity', 100) or 100
-            scores['F5_leverage_decreased'] = debt_to_equity < 100  # 100% 이하
+            scores['F5_leverage_decreased'] = debt_to_equity < 100
             
             # F6: 유동비율 개선
             current_ratio = info.get('currentRatio', 0) or 0
             scores['F6_liquidity_improved'] = current_ratio > 1.5
             
-            # F7: 신주 발행 없음
-            # 정확한 계산을 위해서는 전년 주식수 필요 → proxy
-            scores['F7_no_dilution'] = not info.get('lastDividendValue', 0) == 0  # proxy
+            # F7: 신주 발행 없음 (proxy)
+            scores['F7_no_dilution'] = not info.get('lastDividendValue', 0) == 0
             
             # === 효율성 (Operating Efficiency) ===
-            # F8: 매출총이익률 개선 (gross margin 양수)
+            # F8: 매출총이익률 개선
             gross_margin = info.get('grossMargins', 0) or 0
-            scores['F8_gross_margin_improved'] = gross_margin > 0.2  # 20% 이상
+            scores['F8_gross_margin_improved'] = gross_margin > 0.2
             
             # F9: 자산회전율 개선
             asset_turnover = info.get('revenuePerShare', 0) / max(info.get('bookValue', 1), 1)
@@ -284,81 +237,10 @@ class ValueInvestingAnalyzer:
             'debt_to_equity': info.get('debtToEquity', 0),
         }
 
-    def magic_formula_rank(self, tickers: list) -> list:
-        """
-        조엘 그린블라트 마법공식 순위
-        
-        - 자본수익률(ROC) 순위 + 이익수익률(Earnings Yield) 순위 합산
-        - 합산 순위가 낮을수록 우량한 저평가 주식
-        
-        Returns:
-            [{'ticker': 'AAPL', 'roc_rank': 3, 'ey_rank': 5, 'combined_rank': 8, ...}]
-        """
-        results = []
-        for ticker in tickers:
-            try:
-                stock = yf.Ticker(ticker)
-                info = stock.info
-                
-                # 이익수익률 = EBIT / Enterprise Value (PER의 역수 개념)
-                ebit = info.get('ebitda')
-                if ebit is None:
-                    # JPM과 같은 금융주는 EBITDA 및 EV가 제공되지 않으므로 PER의 역수를 대용치로 사용
-                    per_val = info.get('trailingPE') or info.get('forwardPE') or 0
-                    earnings_yield = (1 / per_val) if per_val > 0 else 0
-                    ebit = 0
-                    ev = 0
-                else:
-                    ev = info.get('enterpriseValue', 1) or 1
-                    earnings_yield = ebit / ev if ev else 0
-                
-                # 자본수익률(ROC) = EBIT / (순고정자산 + 순운전자본)
-                # yfinance에서 totalAssets가 누락되는 경우가 많아 거대한 값이 나오는 버그가 있음.
-                # 이를 방지하기 위해 ROA(총자산이익률)로 대체하여 안정적으로 계산합니다.
-                roc = info.get('returnOnAssets', 0) or 0
-                
-                results.append({
-                    'ticker': ticker,
-                    'earnings_yield': round(earnings_yield * 100, 2),  # 퍼센트로 변환
-                    'roc': round(roc * 100, 2),                        # 퍼센트로 변환
-                    'per': round(info.get('trailingPE', 0) or 0, 2),
-                    'pbr': round(info.get('priceToBook', 0) or 0, 2),
-                    'roe': round((info.get('returnOnEquity', 0) or 0) * 100, 2),
-                    'market_cap': info.get('marketCap', 0),
-                    'ebit': ebit,
-                    'enterprise_value': ev,
-                })
-            except Exception as e:
-                print(f"⚠️ Magic Formula 에러 [{ticker}]: {e}")
-        
-        if not results:
-            return []
-        
-        # 순위 계산
-        ey_sorted = sorted(results, key=lambda x: -x['earnings_yield'])
-        roc_sorted = sorted(results, key=lambda x: -x['roc'])
-        
-        ey_rank = {r['ticker']: i+1 for i, r in enumerate(ey_sorted)}
-        roc_rank = {r['ticker']: i+1 for i, r in enumerate(roc_sorted)}
-        
-        for r in results:
-            r['ey_rank'] = ey_rank.get(r['ticker'], 999)
-            r['roc_rank'] = roc_rank.get(r['ticker'], 999)
-            r['combined_rank'] = r['ey_rank'] + r['roc_rank']
-        
-        return sorted(results, key=lambda x: x['combined_rank'])
-
     def full_value_analysis(self, ticker: str, fcf: float = None) -> dict:
         """
         종합 가치투자 분석 및 기댓값(EV) 산출
         PIOTROSKS 스코어와 DCF 안전마진을 조합하여 진입 시의 승률 및 EV를 예측합니다.
-        
-        Returns:
-            {
-                'ticker': 'AAPL',
-                'expected_value_pct': 15.3,
-                'win_probability': 0.65, ...
-            }
         """
         # 1. Piotroski Score 수집
         fscore_data = self.piotroski_score(ticker)
@@ -371,9 +253,6 @@ class ValueInvestingAnalyzer:
         margin_of_safety = dcf_data.get('margin_of_safety', 0) if dcf_valid else 0
         
         # 3. 승률 추정 (Piotroski Score 및 안전마진 기반)
-        # 기본 승률을 30%로 설정 (장기 투자의 불확실성 반영)
-        # F-score 1점당 +4% (Max +36%)
-        # 안전마진 10%당 +3% (Max +15%)
         base_win_prob = 0.30
         fscore_bonus = score * 0.04
         margin_bonus = min(max(margin_of_safety * 100 / 10 * 0.03, 0), 0.15) if dcf_valid else 0
@@ -382,8 +261,6 @@ class ValueInvestingAnalyzer:
         lose_probability = 1.0 - win_probability
         
         # 4. EV 산출
-        # avg_profit: 내재가치 도달 시의 수익률 (안전하게 최소 15% 적용)
-        # avg_loss: 펀더멘탈 훼손 시 손절 라인 (-20% 설정)
         avg_profit = max(upside_pct, 15.0) if dcf_valid else 15.0
         avg_loss = 20.0
         
@@ -399,403 +276,30 @@ class ValueInvestingAnalyzer:
             'avg_loss_pct': round(avg_loss, 2),
             'expected_value_pct': round(expected_value_pct, 2),
             'dcf_valid': dcf_valid,
-            'fscore_category': fscore_data.get('category', '')
+            'fscore_category': fscore_data.get('category', ''),
+            'per': fscore_data.get('per', 0),
+            'pbr': fscore_data.get('pbr', 0),
+            'roe': fscore_data.get('roe', 0)
         }
 
-    def value_screen(self, tickers: list) -> list:
+    def screen_stocks(self, ticker_list: list) -> pd.DataFrame:
         """
-        가치투자 종합 스크리닝 (100점 만점 가중치 연속 스코어)
-
-        핵심 지표별 가중치 배분:
-        - ROE (수익성) : 30% (가장 중요)
-        - PER (수익가치) : 25% (이익 대비 저평가)
-        - PBR (자산가치) : 20% (자산 대비 저평가)
-        - D/E (재무건전성): 15% (안전성)
-        - 배당률 (인컴) : 10% (현금흐름)
-
-        Returns:
-            종목 리스트 (score 기준 내림차순 정렬)
-        """
-        raw_data = []
-        for ticker in tickers:
-            try:
-                stock = yf.Ticker(ticker)
-                info = stock.info
-
-                per = info.get('trailingPE') or info.get('forwardPE')
-                pbr = info.get('priceToBook')
-                roe = info.get('returnOnEquity')
-                debt_to_equity = info.get('debtToEquity')
-                dividend_yield = info.get('dividendYield')
-
-                raw_data.append({
-                    'ticker': ticker,
-                    'per': per if per and per > 0 else None,
-                    'pbr': pbr if pbr and pbr > 0 else None,
-                    'roe': (roe * 100) if roe else None,
-                    'debt_to_equity': debt_to_equity if debt_to_equity is not None else None,
-                    'dividend_yield': (dividend_yield * 100) if dividend_yield else 0.0,
-                    'market_cap': info.get('marketCap', 0),
-                    'name': info.get('longName', ticker),
-                    'sector': info.get('sector', ''),
-                    'current_price': info.get('currentPrice', 0),
-                    'target_price': info.get('targetMeanPrice', 0),
-                })
-            except Exception as e:
-                print(f"⚠️ 스크리닝 에러 [{ticker}]: {e}")
-
-        if not raw_data:
-            return []
-
-        # ── 가중치 기반 스코어 계산 (합계 100점) ──
-        results = []
-        for item in raw_data:
-            scores = {}
-            breakdown = {}
-
-            # 1) PER 점수 (25점 만점, 수익가치)
-            per = item['per']
-            if per and 0 < per < 200:
-                if per <= 10:
-                    scores['per'] = 25
-                elif per <= 15:
-                    scores['per'] = 25 - (per - 10) * 2  # 15~25점
-                elif per <= 25:
-                    scores['per'] = 15 - (per - 15) * 1  # 5~15점
-                elif per <= 60:
-                    scores['per'] = max(0, 5 - (per - 25) * 0.14)
-                else:
-                    scores['per'] = 0
-                breakdown['PER'] = f"{per:.1f} → {scores['per']:.1f}/25점"
-            else:
-                scores['per'] = 0
-                breakdown['PER'] = "N/A → 0/25점"
-
-            # 2) PBR 점수 (20점 만점, 자산가치)
-            pbr = item['pbr']
-            if pbr and 0 < pbr < 100:
-                if pbr <= 1.0:
-                    scores['pbr'] = 20
-                elif pbr <= 1.5:
-                    scores['pbr'] = 20 - (pbr - 1.0) * 10  # 15~20점
-                elif pbr <= 3.0:
-                    scores['pbr'] = 15 - (pbr - 1.5) * 6  # 6~15점
-                elif pbr <= 10.0:
-                    scores['pbr'] = max(0, 6 - (pbr - 3.0) * 0.86)
-                else:
-                    scores['pbr'] = 0
-                breakdown['PBR'] = f"{pbr:.2f} → {scores['pbr']:.1f}/20점"
-            else:
-                scores['pbr'] = 0
-                breakdown['PBR'] = "N/A → 0/20점"
-
-            # 3) ROE 점수 (30점 만점, 수익성)
-            roe = item['roe']
-            if roe is not None:
-                if roe >= 25:
-                    scores['roe'] = 30
-                elif roe >= 15:
-                    scores['roe'] = 20 + (roe - 15) * 1.0  # 20~30점
-                elif roe >= 8:
-                    scores['roe'] = 10 + (roe - 8) * 1.42  # 10~20점
-                elif roe >= 0:
-                    scores['roe'] = roe * 1.25  # 0~10점
-                else:
-                    scores['roe'] = 0
-                breakdown['ROE'] = f"{roe:.1f}% → {scores['roe']:.1f}/30점"
-            else:
-                scores['roe'] = 0
-                breakdown['ROE'] = "N/A → 0/30점"
-
-            # 4) 재무건전성 (15점 만점, 안전성)
-            de = item['debt_to_equity']
-            if de is not None and de >= 0:
-                if de <= 30:
-                    scores['debt'] = 15
-                elif de <= 50:
-                    scores['debt'] = 15 - (de - 30) * 0.25  # 10~15점
-                elif de <= 100:
-                    scores['debt'] = 10 - (de - 50) * 0.12  # 4~10점
-                elif de <= 200:
-                    scores['debt'] = max(0, 4 - (de - 100) * 0.04)
-                else:
-                    scores['debt'] = 0
-                breakdown['D/E'] = f"{de:.1f}% → {scores['debt']:.1f}/15점"
-            else:
-                scores['debt'] = 5  # 데이터 없으면 중립
-                breakdown['D/E'] = "N/A → 5/15점(중립)"
-
-            # 5) 배당 점수 (10점 만점, 현금흐름)
-            div = item['dividend_yield']
-            if div > 0:
-                if div >= 4.0:
-                    scores['dividend'] = 10
-                elif div >= 2.0:
-                    scores['dividend'] = 6 + (div - 2.0) * 2  # 6~10점
-                elif div >= 1.0:
-                    scores['dividend'] = 3 + (div - 1.0) * 3  # 3~6점
-                else:
-                    scores['dividend'] = div * 3  # 0~3점
-                breakdown['배당'] = f"{div:.2f}% → {scores['dividend']:.1f}/10점"
-            else:
-                scores['dividend'] = 0
-                breakdown['배당'] = "0% → 0/10점"
-
-            total_score = round(sum(scores.values()), 1)
-
-            # 등급 부여
-            if total_score >= 80:
-                grade = "S"
-            elif total_score >= 65:
-                grade = "A"
-            elif total_score >= 50:
-                grade = "B"
-            elif total_score >= 35:
-                grade = "C"
-            else:
-                grade = "D"
-
-            results.append({
-                'ticker': item['ticker'],
-                'name': item['name'],
-                'score': total_score,
-                'grade': grade,
-                'per': round(per, 1) if per and per < 9999 else None,
-                'pbr': round(pbr, 2) if pbr and pbr < 9999 else None,
-                'roe': round(roe, 1) if roe is not None else None,
-                'debt_to_equity': round(de, 1) if de is not None else None,
-                'dividend_yield': round(div, 2),
-                'sector': item['sector'],
-                'breakdown': breakdown,
-                'scores_detail': scores,
-            })
-
-        return sorted(results, key=lambda x: -x['score'])
-
-    def deep_value_screen(self, tickers: list) -> list:
-        """
-        심층 가치투자 스크리닝 (사용자 맞춤형 안전마진 + 팻테일 척도)
-        
-        조건:
-        1. PBR: 자산 가치 측면 안전마진
-        2. 순현금 (Net Cash = Total Cash - Total Debt): 재무 안전성
-        3. R&D 비율 (R&D / Revenue): 미래 팻테일을 위한 투자 비중
-        4. 부채 비율 (Debt / Equity): 예상치 못한 충격에 대한 강건함
-        5. FCF 수익률 (FCF / Market Cap): 현금 창출력 및 옵션 매수 체력
+        주어진 티커 리스트를 순회하며 가치투자 점수를 산출하고 정렬된 데이터프레임 반환
         """
         results = []
-        for ticker in tickers:
+        for ticker in ticker_list:
             try:
-                stock = yf.Ticker(ticker)
-                info = stock.info
-                
-                # 1. PBR
-                pbr = info.get('priceToBook', 0)
-                
-                # 2. 순현금
-                total_cash = info.get('totalCash', 0) or 0
-                total_debt = info.get('totalDebt', 0) or 0
-                net_cash = total_cash - total_debt
-                
-                # 3. FCF 수익률
-                fcf = info.get('freeCashflow', 0) or 0
-                market_cap = info.get('marketCap', 1) or 1
-                fcf_yield = (fcf / market_cap) * 100 if market_cap else 0
-                
-                # 4. R&D 비중
-                rnd_ratio = 0
-                try:
-                    inc = stock.income_stmt
-                    if not inc.empty:
-                        rnd = inc.loc['Research And Development'].iloc[0] if 'Research And Development' in inc.index else 0
-                        rev = inc.loc['Total Revenue'].iloc[0] if 'Total Revenue' in inc.index else 1
-                        rnd_ratio = (rnd / rev) * 100 if rev else 0
-                except:
-                    pass
-                
-                # 5. 부채비율
-                debt_to_equity = info.get('debtToEquity', 0) or 0
-                
-                # 점수 계산 (100점 만점)
-                score = 0
-                breakdown = {}
-                
-                if pbr and pbr <= 1.0: 
-                    score += 20; breakdown['PBR'] = f"{pbr:.2f} (20점)"
-                elif pbr and pbr <= 1.5: 
-                    score += 10; breakdown['PBR'] = f"{pbr:.2f} (10점)"
-                else:
-                    breakdown['PBR'] = f"{pbr:.2f} (0점)" if pbr else "N/A"
-                
-                if net_cash > 0: 
-                    score += 20; breakdown['순현금'] = f"+ (20점)"
-                else:
-                    breakdown['순현금'] = f"- (0점)"
-                
-                if fcf_yield > 5: 
-                    score += 20; breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (20점)"
-                elif fcf_yield > 0: 
-                    score += 10; breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (10점)"
-                else:
-                    breakdown['FCF Yld'] = f"{fcf_yield:.1f}% (0점)"
-                
-                if rnd_ratio > 10: 
-                    score += 20; breakdown['R&D'] = f"{rnd_ratio:.1f}% (20점)"
-                elif rnd_ratio > 5: 
-                    score += 10; breakdown['R&D'] = f"{rnd_ratio:.1f}% (10점)"
-                else:
-                    breakdown['R&D'] = f"{rnd_ratio:.1f}% (0점)"
-                
-                if debt_to_equity > 0 and debt_to_equity <= 50: 
-                    score += 20; breakdown['부채비율'] = f"{debt_to_equity:.1f}% (20점)"
-                elif debt_to_equity > 0 and debt_to_equity <= 100: 
-                    score += 10; breakdown['부채비율'] = f"{debt_to_equity:.1f}% (10점)"
-                else:
-                    breakdown['부채비율'] = f"{debt_to_equity:.1f}% (0점)"
-                
-                results.append({
-                    'ticker': ticker,
-                    'name': info.get('longName', ticker),
-                    'sector': info.get('sector', ''),
-                    'score': score,
-                    'pbr': round(pbr, 2) if pbr else None,
-                    'net_cash': net_cash,
-                    'fcf_yield': round(fcf_yield, 2),
-                    'rnd_ratio': round(rnd_ratio, 2),
-                    'debt_to_equity': round(debt_to_equity, 1),
-                    'breakdown': breakdown
-                })
-                
+                analysis = self.full_value_analysis(ticker)
+                results.append(analysis)
             except Exception as e:
-                print(f"⚠️ 심층 스크리닝 에러 [{ticker}]: {e}")
-                
-                
-        return sorted(results, key=lambda x: -x['score'])
-
-    def quant_value_screen(self, tickers: list) -> list:
-        """
-        Quant Value Screen (종합 퀀트 가치투자)
-        - 제외 섹터: Financials, Utilities (지주사는 제외하지 않음으로 완화)
-        - 시가총액: 전 범위를 대상으로 하되 시총 정보가 있는 종목만 포함
-        - F-Score >= 5 (기존 6에서 완화하여 더 많은 후보군 확보)
-        - PBR (낮을수록 좋음) 순위 + GP/A (높을수록 좋음) 순위 합산
-        - GP/A 결측 시 ROA를 보완 지표로 사용
-        """
-        valid_tickers = []
-        for ticker in tickers:
-            try:
-                stock = yf.Ticker(ticker)
-                info = stock.info
-                
-                sector = info.get('sector', '')
-                industry = info.get('industry', '')
-                
-                # 제외 섹터 필터링 (금융/유틸리티는 통상적인 퀀트 지표가 적용되지 않음)
-                excluded_keywords = ['Financial', 'Utilities']
-                if any(kw.lower() in sector.lower() or kw.lower() in industry.lower() for kw in excluded_keywords):
-                    continue
-                
-                market_cap = info.get('marketCap', 0)
-                if not market_cap or market_cap == 0:
-                    # 시총 정보가 없으면 분석 제외
-                    continue
-                    
-                valid_tickers.append({
-                    'ticker': ticker,
-                    'market_cap': market_cap,
-                    'info': info,
-                    'sector': sector,
-                    'stock': stock
-                })
-            except Exception as e:
-                print(f"⚠️ Basic Info 에러 [{ticker}]: {e}")
-                
-        if not valid_tickers:
-            return []
-            
-        # [변경] 시가총액 하위권 필터링 제거 -> 전 종목 대상
-        candidate_tickers = valid_tickers
+                print(f"Error screening {ticker}: {e}")
+                continue
         
-        screened_data = []
-        for item in candidate_tickers:
-            ticker = item['ticker']
-            stock = item['stock']
-            info = item['info']
-            try:
-                # F-Score 필터링 (5점 이상으로 완화)
-                fscore_data = self.piotroski_score(ticker)
-                f_score = fscore_data.get('score', 0)
-                if f_score < 5:
-                    continue
-                    
-                pbr = info.get('priceToBook')
-                if not pbr or pbr <= 0:
-                    # PBR 0 이하는 데이터 오류 또는 자본잠식이므로 제외
-                    continue
-                    
-                # GP/A 계산 (Gross Profit / Total Assets)
-                gross_profit = info.get('grossProfits')
-                total_assets = info.get('totalAssets')
-                
-                if gross_profit is None:
-                    try:
-                        inc = stock.income_stmt
-                        if not inc.empty:
-                            for idx in ['Gross Profit', 'GrossProfit', 'Total Revenue']:
-                                if idx in inc.index:
-                                    gross_profit = inc.loc[idx].iloc[0]
-                                    break
-                    except:
-                        pass
-                
-                if total_assets is None:
-                    try:
-                        bal = stock.balance_sheet
-                        if not bal.empty and 'Total Assets' in bal.index:
-                            total_assets = bal.loc['Total Assets'].iloc[0]
-                    except:
-                        pass
-                        
-                # GP/A가 없으면 ROA를 fallback으로 사용
-                if gross_profit is None or total_assets is None or total_assets <= 0:
-                    roa = info.get('returnOnAssets', 0) or 0
-                    gpa = roa # Fallback
-                else:
-                    gpa = gross_profit / total_assets
-                
-                screened_data.append({
-                    'ticker': ticker,
-                    'name': info.get('longName', ticker),
-                    'sector': item['sector'],
-                    'market_cap': item['market_cap'],
-                    'pbr': pbr,
-                    'gpa': gpa,
-                    'fscore': f_score
-                })
-            except Exception as e:
-                print(f"⚠️ Quant Value Screen 지표 에러 [{ticker}]: {e}")
-                
-        if not screened_data:
-            return []
-            
-        # PBR Rank (낮을수록 좋음)
-        screened_data.sort(key=lambda x: x['pbr'])
-        for i, item in enumerate(screened_data):
-            item['pbr_rank'] = i + 1
-            
-        # GP/A Rank (높을수록 좋음)
-        screened_data.sort(key=lambda x: -x['gpa'])
-        for i, item in enumerate(screened_data):
-            item['gpa_rank'] = i + 1
-            
-        # 통합 랭크 계산
-        for item in screened_data:
-            item['combined_rank'] = item['pbr_rank'] + item['gpa_rank']
-            
-        # 통합 랭크 오름차순 정렬
-        screened_data.sort(key=lambda x: x['combined_rank'])
-        
-        return screened_data
+        df = pd.DataFrame(results)
+        if not df.empty:
+            # EV 및 스코어 순으로 정렬
+            df = df.sort_values(by=['expected_value_pct', 'piotroski_score'], ascending=False)
+        return df
 
 # ==========================================
 # STANDALONE TEST
@@ -805,21 +309,21 @@ if __name__ == "__main__":
     
     print("[1] 애플 DCF 내재가치 분석...")
     dcf = analyzer.dcf_valuation("AAPL", growth_rate_1_5=0.08, growth_rate_6_10=0.05)
-    print(f"    내재가치/주: ${dcf.get('intrinsic_value_per_share', 0):,.2f}")
-    print(f"    현재가격: ${dcf.get('current_price', 0):,.2f}")
-    print(f"    안전마진: {dcf.get('margin_of_safety', 0)*100:.1f}%")
+    if 'error' not in dcf:
+        print(f"    내재가치/주: ${dcf.get('intrinsic_value_per_share', 0):,.2f}")
+        print(f"    현재가격: ${dcf.get('current_price', 0):,.2f}")
+        print(f"    안전마진: {dcf.get('margin_of_safety', 0)*100:.1f}%")
+    else:
+        print(f"    에러: {dcf['error']}")
     
-    print("\n[2] 그레이엄 넘버 계산...")
-    gn = analyzer.graham_number(eps=6.5, book_value_per_share=4.0)
-    print(f"    Graham Number (EPS=6.5, BPS=4.0): ${gn}")
-    
-    print("\n[3] 피오트로스키 F-Score (MSFT)...")
+    print("\n[2] 피오트로스키 F-Score (MSFT)...")
     fscore = analyzer.piotroski_score("MSFT")
     print(f"    점수: {fscore['score']}/9 → {fscore['category']}")
     
-    print("\n[4] 종합 가치투자 EV 산출 (AAPL)...")
-    full_analysis = analyzer.full_value_analysis("AAPL", fcf=100e9)
+    print("\n[3] 종합 가치투자 EV 산출 (AAPL)...")
+    full_analysis = analyzer.full_value_analysis("AAPL")
     print(f"    추정 승률: {full_analysis['win_probability']*100:.1f}%")
     print(f"    예상 수익/손실: +{full_analysis['avg_profit_pct']:.1f}% / -{full_analysis['avg_loss_pct']:.1f}%")
     print(f"    Expected Value (EV): {full_analysis['expected_value_pct']:.2f}%")
+
 
