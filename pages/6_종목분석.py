@@ -23,7 +23,7 @@ st.set_page_config(
 # --- Premium CSS (Pure White Professional Theme) ---
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 
 :root {
     --primary: #4f46e5;
@@ -41,7 +41,7 @@ st.markdown("""
     --chart-grid: rgba(0, 0, 0, 0.05);
 }
 
-* { font-family: 'Outfit', 'Noto Sans KR', sans-serif; }
+* { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; }
 
 [data-testid="stAppViewContainer"] {
     background-color: var(--background);

@@ -5,6 +5,14 @@ st.set_page_config(
     layout="wide"
 )
 
+# Global Font Styling
+st.markdown("""
+<style>
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+* { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("AGA 퀀트 시스템 (Premium)")
 st.markdown("---")
 
