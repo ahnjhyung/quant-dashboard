@@ -169,7 +169,9 @@ with st.sidebar:
         ticker_input = ""
 
     st.markdown("---")
-    st.caption("En# --- Main Dashboard Logic ---
+    st.caption("Engineered for Alpha")
+
+# --- Main Dashboard Logic ---
 
 if mode == "Single Stock Analysis":
     if not ticker_input:
