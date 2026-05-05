@@ -10,7 +10,7 @@ import numpy as np
 import yfinance as yf
 
 # Page Config
-st.set_page_config(page_title="포트폴리오 비교", layout="wide")
+st.set_page_config(page_title="포트폴리오 분석 | 통합 퀀트 시스템", layout="wide")
 
 # Notion Embed Detection
 is_embed = st.query_params.get("embed", "false").lower() == "true"
@@ -141,8 +141,8 @@ section[data-testid="stSidebarNav"] { display: none; }
 
 # ── Header ───────────────────────────────────────────────────────────
 if not is_embed:
-    st.markdown("## 포트폴리오 비교")
-    st.caption("멀티에셋 포트폴리오 백테스팅 및 리스크 분석")
+    st.markdown("## 포트폴리오 분석 및 비교")
+    st.caption("멀티에셋 포트폴리오 백테스팅 및 리스크 최적화 시스템")
 
 
 # ── Ticker Search Helper ─────────────────────────────────────────────
@@ -197,12 +197,12 @@ with st.sidebar:
     start_date = datetime(start_year, month_labels.index(start_month) + 1, 1)
 
     rebalance_freq = st.selectbox(
-        "Rebalancing",
-        ["Monthly (ME)", "Quarterly (QE)", "Yearly (YE)"],
+        "리밸런싱 주기",
+        ["월별 (Monthly)", "분기별 (Quarterly)", "연별 (Yearly)"],
         index=0
     )
-    st.caption("선택한 리밸런싱 주기는 **모든** 포트폴리오에 동일하게 적용됩니다.")
-    freq_map = {"Monthly (ME)": "ME", "Quarterly (QE)": "QE", "Yearly (YE)": "YE"}
+    st.caption("선택한 리밸런싱 주기는 모든 포트폴리오에 동일하게 적용됩니다.")
+    freq_map = {"월별 (Monthly)": "ME", "분기별 (Quarterly)": "QE", "연별 (Yearly)": "YE"}
 
     st.markdown("---")
 
@@ -232,7 +232,7 @@ with st.sidebar:
     PRESETS = {**DEFAULT_PRESETS, **st.session_state.custom_presets}
 
     selected_presets = st.multiselect(
-        "Preset Strategies",
+        "전략 프리셋 선택",
         list(PRESETS.keys()),
         key="selected_presets"
     )
@@ -250,7 +250,7 @@ with st.sidebar:
         """)
 
     st.markdown("---")
-    st.caption(f"v3.0 | {datetime.now().strftime('%Y-%m-%d')}")
+    st.caption(f"AGA Quant System v4.5 Premium Edition | {datetime.now().strftime('%Y-%m-%d')}")
 
 
 # ── Ticker Search & Custom Portfolio Builder ─────────────────────────
@@ -285,8 +285,8 @@ with st.expander("Custom Portfolio", expanded=not selected_presets):
                 st.caption("검색 결과가 없습니다.")
 
     with col_build:
-        st.markdown("#### Build Strategy")
-        c_name = st.text_input("Name", "My Strategy")
+        st.markdown("#### 직접 전략 구성")
+        c_name = st.text_input("전략 이름", "나의 전략")
         c_assets = st.text_input(
             "티커 (쉼표로 구분)",
             "SPY, TLT, GLD",
@@ -430,7 +430,7 @@ else:
                         x=0,
                         font=dict(size=11, color="#333333")
                     ),
-                    margin=dict(l=0, r=0, t=30, b=0),
+                    margin=dict(l=70, r=40, t=80, b=60),
                     font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333333"),
                 )
                 st.plotly_chart(fig_growth, use_container_width=True)
@@ -464,7 +464,7 @@ else:
                         xaxis=dict(title="최대낙폭 (%)", gridcolor="#f0f0f0", linecolor="#cccccc", tickfont=dict(color="#555555")),
                         yaxis=dict(title="CAGR (%)", gridcolor="#f0f0f0", linecolor="#cccccc", tickfont=dict(color="#555555")),
                         font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333333"),
-                        margin=dict(l=0, r=0, t=40, b=0),
+                        margin=dict(l=70, r=40, t=80, b=60),
                     )
                     st.plotly_chart(fig_scatter, use_container_width=True)
 
@@ -486,7 +486,7 @@ else:
                         xaxis=dict(gridcolor="#f0f0f0", linecolor="#cccccc", tickfont=dict(color="#555555")),
                         yaxis=dict(gridcolor="#f0f0f0", linecolor="#cccccc", tickfont=dict(color="#555555")),
                         font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333333"),
-                        margin=dict(l=0, r=0, t=40, b=0),
+                        margin=dict(l=70, r=40, t=80, b=60),
                     )
                     st.plotly_chart(fig_bar, use_container_width=True)
 
@@ -581,7 +581,7 @@ else:
                     mc1, mc2, mc3, mc4 = st.columns(4)
                     ev_class = "positive" if metrics['ev'] > 0 else "negative"
                     with mc1:
-                        st.markdown(f'<div class="stat-card"><div class="label">기대수익률</div>'
+                        st.markdown(f'<div class="stat-card"><div class="label">기대 수익률</div>'
                                     f'<div class="value">{metrics["expected_return"]:+.1f}%</div></div>',
                                     unsafe_allow_html=True)
                     with mc2:
@@ -589,11 +589,11 @@ else:
                                     f'<div class="value">{metrics["volatility"]:.1f}%</div></div>',
                                     unsafe_allow_html=True)
                     with mc3:
-                        st.markdown(f'<div class="stat-card"><div class="label">SHARPE</div>'
+                        st.markdown(f'<div class="stat-card"><div class="label">샤프 지수 (Sharpe)</div>'
                                     f'<div class="value">{metrics["sharpe"]:.3f}</div></div>',
                                     unsafe_allow_html=True)
                     with mc4:
-                        st.markdown(f'<div class="stat-card"><div class="label">EV (초과수익)</div>'
+                        st.markdown(f'<div class="stat-card"><div class="label">기대값 (초과수익)</div>'
                                     f'<div class="value"><span class="{ev_class}">{metrics["ev"]:+.1f}%</span></div></div>',
                                     unsafe_allow_html=True)
 
@@ -615,7 +615,7 @@ else:
                             plot_bgcolor="#ffffff",
                             paper_bgcolor="#ffffff",
                             font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333"),
-                            margin=dict(l=0, r=0, t=40, b=0),
+                            margin=dict(l=40, r=40, t=80, b=40),
                             showlegend=False,
                         )
                         st.plotly_chart(fig_pie, use_container_width=True)
@@ -661,7 +661,7 @@ else:
                                 xaxis=dict(title="변동성 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
                                 yaxis=dict(title="기대수익률 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
                                 font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333"),
-                                margin=dict(l=0, r=0, t=40, b=0),
+                                margin=dict(l=70, r=40, t=80, b=60),
                             )
                             st.plotly_chart(fig_ef, use_container_width=True)
 

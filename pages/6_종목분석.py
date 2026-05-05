@@ -14,7 +14,7 @@ import time
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="퀀트 인텔리전스 | 종목 분석 대시보드",
+    page_title="종목 분석 | 통합 퀀트 시스템",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
@@ -139,14 +139,14 @@ db = SupabaseManager()
 
 # --- Sidebar Configuration ---
 with st.sidebar:
-    st.markdown("<h2 style='margin-top:0; color:#1e293b; font-weight:700;'>퀀트 인텔리전스</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin-top:0; color:#1e293b; font-weight:700;'>종목 분석</h2>", unsafe_allow_html=True)
     
     st.markdown("### 분석 모드 선택")
-    mode = st.radio("메뉴", ["종목별 상세 분석", "글로벌 거시경제 분석"], index=0)
+    mode = st.radio("메뉴", ["마이크로 분석", "매크로 분석"], index=0, label_visibility="collapsed")
     
     st.markdown("---")
     
-    if mode == "종목별 상세 분석":
+    if mode == "마이크로 분석":
         ticker_input = st.text_input("종목 코드 (Ticker)", value="NVDA", help="예: TSLA, AAPL, 005930.KS")
         period = st.selectbox("데이터 분석 범위", ["6개월", "1년", "2년", "5년"], index=1)
         period_map = {"6개월": "6mo", "1년": "1y", "2년": "2y", "5년": "5y"}
@@ -157,10 +157,10 @@ with st.sidebar:
         ticker_input = ""
 
     st.markdown("---")
-    st.caption("Alpha Generation System v4.2")
+    st.caption("Alpha Generation System v4.5 Premium")
 
 # --- Main Dashboard Logic ---
-if mode == "종목별 상세 분석":
+if mode == "마이크로 분석":
     if not ticker_input:
         st.info("분석할 종목 코드를 입력하고 '데이터 분석 시작' 버튼을 클릭해 주세요.")
     else:
@@ -281,18 +281,18 @@ if mode == "종목별 상세 분석":
                                 rows=2, cols=1, shared_xaxes=True,
                                 vertical_spacing=0.05, row_heights=[0.7, 0.3]
                             )
-                            fig.add_trace(go.Candlestick(x=ohlcv.index, open=ohlcv['Open'], high=ohlcv['High'], low=ohlcv['Low'], close=ohlcv['Close'], name="Price"), row=1, col=1)
+                            fig.add_trace(go.Candlestick(x=ohlcv.index, open=ohlcv['Open'], high=ohlcv['High'], low=ohlcv['Low'], close=ohlcv['Close'], name="주가"), row=1, col=1)
                             
                             upper, mid, lower, _, _ = swing_analyzer.bollinger_bands(ohlcv['Close'])
-                            fig.add_trace(go.Scatter(x=ohlcv.index, y=upper, line=dict(color='rgba(79, 70, 229, 0.3)', width=1), name="Upper BB"), row=1, col=1)
-                            fig.add_trace(go.Scatter(x=ohlcv.index, y=lower, line=dict(color='rgba(79, 70, 229, 0.3)', width=1), fill='tonexty', fillcolor='rgba(79, 70, 229, 0.05)', name="Lower BB"), row=1, col=1)
+                            fig.add_trace(go.Scatter(x=ohlcv.index, y=upper, line=dict(color='rgba(79, 70, 229, 0.3)', width=1), name="볼린저 상단"), row=1, col=1)
+                            fig.add_trace(go.Scatter(x=ohlcv.index, y=lower, line=dict(color='rgba(79, 70, 229, 0.3)', width=1), fill='tonexty', fillcolor='rgba(79, 70, 229, 0.05)', name="볼린저 하단"), row=1, col=1)
                             
-                            fig.add_trace(go.Bar(x=ohlcv.index, y=ohlcv['Volume'], name="Volume", marker_color="rgba(148, 163, 184, 0.5)"), row=2, col=1)
+                            fig.add_trace(go.Bar(x=ohlcv.index, y=ohlcv['Volume'], name="거래량", marker_color="rgba(148, 163, 184, 0.5)"), row=2, col=1)
                             
                             fig.update_layout(
                                 height=550, template="plotly_white",
                                 xaxis_rangeslider_visible=False,
-                                margin=dict(l=40, r=40, t=20, b=20),
+                                margin=dict(l=60, r=40, t=50, b=50),
                                 hovermode='x unified'
                             )
                             fig.update_xaxes(showgrid=True, gridcolor='rgba(0,0,0,0.05)')
@@ -426,8 +426,8 @@ if mode == "종목별 상세 분석":
                         </div>
                         """, unsafe_allow_html=True)
 
-elif mode == "글로벌 거시경제 분석":
-    st.markdown("<h2 class='animate-fade' style='color:#1e293b; font-weight:700;'>글로벌 거시경제 인텔리전스</h2>", unsafe_allow_html=True)
+elif mode == "매크로 분석":
+    st.markdown("<h2 class='animate-fade' style='color:#1e293b; font-weight:700;'>매크로 경제 데이터 분석</h2>", unsafe_allow_html=True)
     
     with st.spinner("거시경제 실시간 데이터 동기화 중..."):
         latest = db.get_latest_macro()
@@ -461,17 +461,23 @@ elif mode == "글로벌 거시경제 분석":
     }
     grp = st.selectbox("시각화 지표 그룹 선택", list(MACRO_GROUPS.keys()))
     
+    TICKER_LABELS = {
+        "M2SL": "미국 통화량 (M2)", "WALCL": "연준 총자산", "NET_LIQUIDITY": "실질 유동성",
+        "DGS2": "미 2년물 국채", "DGS10": "미 10년물 국채", "T10Y2Y": "금리차 (10Y-2Y)", "T10Y3M": "금리차 (10Y-3M)",
+        "CPIAUCSL": "미국 CPI", "VIXCLS": "공포지수 (VIX)", "BAMLH0A0HYM2": "하이일드 스프레드"
+    }
+    
     fig_m = go.Figure()
     for t in MACRO_GROUPS[grp]:
         h = db.get_macro_history(t, days=1825)
         if h is not None and not h.empty:
-            fig_m.add_trace(go.Scatter(x=h.index, y=h['value'], name=t, line=dict(width=2)))
+            fig_m.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(width=2)))
             
     fig_m.update_layout(
         height=500, template="plotly_white",
         xaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)'),
         yaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)'),
-        margin=dict(l=50, r=50, t=30, b=50),
+        margin=dict(l=70, r=40, t=80, b=60),
         hovermode='x unified',
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
@@ -479,4 +485,4 @@ elif mode == "글로벌 거시경제 분석":
 
 # --- Footer ---
 st.markdown("---")
-st.markdown("<p style='text-align:center; color:var(--text-muted); font-size:0.85rem; font-weight:500;'>Quant Intelligence Dashboard v4.2 Platinum | 데이터 기반 무결성 및 기대값 투자 시스템</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:var(--text-muted); font-size:0.85rem; font-weight:500;'>종목 분석 대시보드 v4.5 Premium | 데이터 기반 무결성 및 기대값 투자 시스템</p>", unsafe_allow_html=True)
