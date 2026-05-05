@@ -15,7 +15,7 @@ import time
 # --- Page Config ---
 st.set_page_config(
     page_title="Stock Intelligence Pro",
-    page_icon="💎",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -26,110 +26,97 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
 :root {
-    --primary: #6366f1;
-    --primary-dark: #4f46e5;
-    --secondary: #ec4899;
-    --success: #10b981;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --background: #0f172a;
-    --glass: rgba(255, 255, 255, 0.03);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
+    --primary: #4f46e5;
+    --primary-dark: #3730a3;
+    --secondary: #db2777;
+    --success: #059669;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --background: #ffffff;
+    --card-bg: #ffffff;
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --text-main: #1e293b;
+    --text-muted: #64748b;
 }
 
 * { font-family: 'Outfit', 'Noto Sans KR', sans-serif; }
 
 /* Global Styling */
 [data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at top right, #1e293b, #0f172a);
+    background-color: var(--background);
     color: var(--text-main);
 }
 
 [data-testid="stHeader"] { background: transparent; }
 [data-testid="stSidebar"] {
-    background-color: rgba(15, 23, 42, 0.95);
+    background-color: #f8fafc;
     border-right: 1px solid var(--glass-border);
 }
 
-/* Glassmorphism Cards */
+/* Premium Cards */
 .glass-card {
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-radius: 20px;
+    background: var(--card-bg);
+    border-radius: 16px;
     border: 1px solid var(--glass-border);
     padding: 24px;
     margin-bottom: 24px;
-    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .glass-card:hover {
-    border-color: rgba(99, 102, 241, 0.4);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary);
 }
 
 .metric-box {
     text-align: center;
-    padding: 15px;
+    padding: 10px;
 }
 .metric-label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
 }
 .metric-value {
-    font-size: 1.8rem;
+    font-size: 1.6rem;
     font-weight: 700;
     color: var(--text-main);
 }
 .metric-delta {
-    font-size: 0.9rem;
-    margin-top: 4px;
+    font-size: 0.85rem;
+    margin-top: 2px;
 }
 
 /* Verdict Styles */
 .verdict-container {
     padding: 30px;
-    border-radius: 24px;
+    border-radius: 20px;
     text-align: center;
     margin-bottom: 30px;
-    position: relative;
-    overflow: hidden;
+    color: white;
 }
-.verdict-container::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(45deg, rgba(255,255,255,0.1), transparent);
-    z-index: 1;
-}
-.verdict-buy { background: linear-gradient(135deg, #065f46, #10b981); box-shadow: 0 10px 40px -10px rgba(16, 185, 129, 0.5); }
-.verdict-hold { background: linear-gradient(135deg, #92400e, #f59e0b); box-shadow: 0 10px 40px -10px rgba(245, 158, 11, 0.5); }
-.verdict-sell { background: linear-gradient(135deg, #991b1b, #ef4444); box-shadow: 0 10px 40px -10px rgba(239, 68, 68, 0.5); }
+.verdict-buy { background: linear-gradient(135deg, #10b981, #059669); }
+.verdict-hold { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.verdict-sell { background: linear-gradient(135deg, #ef4444, #dc2626); }
 
-.verdict-title { font-size: 2.5rem; font-weight: 800; margin: 0; z-index: 2; position: relative; color: white; }
-.verdict-score { font-size: 1.1rem; opacity: 0.9; margin-top: 5px; z-index: 2; position: relative; color: white; }
+.verdict-title { font-size: 2.2rem; font-weight: 800; margin: 0; color: white; }
+.verdict-score { font-size: 1rem; opacity: 0.9; margin-top: 5px; color: white; }
 
 /* Custom Progress Bar */
-.progress-bg { background: rgba(255,255,255,0.1); border-radius: 10px; height: 8px; width: 100%; margin-top: 10px; }
+.progress-bg { background: #f1f5f9; border-radius: 10px; height: 6px; width: 100%; margin-top: 10px; }
 .progress-fill { height: 100%; border-radius: 10px; transition: width 1s ease-in-out; }
 
 /* Tabs Styling */
-.stTabs [data-baseweb="tab-list"] { gap: 24px; background-color: transparent; }
+.stTabs [data-baseweb="tab-list"] { gap: 20px; }
 .stTabs [data-baseweb="tab"] {
-    height: 50px;
-    background-color: transparent !important;
-    border: none !important;
     color: var(--text-muted) !important;
     font-weight: 600 !important;
-    font-size: 1rem !important;
 }
 .stTabs [aria-selected="true"] {
     color: var(--primary) !important;
-    border-bottom: 3px solid var(--primary) !important;
 }
 
 /* Animations */
@@ -137,7 +124,7 @@ st.markdown("""
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade { animation: fadeIn 0.6s ease-out forwards; }
+.animate-fade { animation: fadeIn 0.5s ease-out forwards; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -175,13 +162,13 @@ with st.sidebar:
 
 if mode == "Single Stock Analysis":
     if not ticker_input:
-        st.info("💡 Enter a ticker symbol in the sidebar to begin analysis.")
+        st.info("Enter a ticker symbol in the sidebar to begin analysis.")
     else:
         # Use session state to persist analysis results across tab changes
         if run_btn:
             ticker = ticker_input.strip().upper()
             
-            with st.spinner(f"🚀 Initializing AI-Driven Hybrid Analysis for {ticker}..."):
+            with st.spinner(f"Initializing AI-Driven Hybrid Analysis for {ticker}..."):
                 # Fetch Data
                 fscore_data = value_analyzer.piotroski_score(ticker)
                 dcf_data = value_analyzer.dcf_valuation(ticker)
@@ -287,7 +274,7 @@ if mode == "Single Stock Analysis":
                     """, unsafe_allow_html=True)
 
                 # 3. DETAILED ANALYSIS TABS
-                tab1, tab2, tab3 = st.tabs(["🚀 HYBRID EXECUTIVE SUMMARY", "💎 FUNDAMENTAL DEEP-DIVE", "📈 TECHNICAL PRECISION"])
+                tab1, tab2, tab3 = st.tabs(["HYBRID EXECUTIVE SUMMARY", "FUNDAMENTAL DEEP-DIVE", "TECHNICAL PRECISION"])
                 
                 with tab1:
                     col_left, col_right = st.columns([2, 1])
@@ -382,7 +369,7 @@ if mode == "Single Stock Analysis":
                         details = fscore_data.get('details', {})
                         if details:
                             f_df = pd.DataFrame([
-                                {"Criteria": k.replace("F", "").replace("_", " ").title(), "Status": "PASS ✅" if v else "FAIL ❌"}
+                                {"Criteria": k.replace("F", "").replace("_", " ").title(), "Status": "PASS" if v else "FAIL"}
                                 for k, v in details.items()
                             ])
                             st.dataframe(f_df, hide_index=True, use_container_width=True)
