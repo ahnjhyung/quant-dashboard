@@ -493,7 +493,7 @@ elif mode == "매크로 분석":
 
     # --- Historical Trend Analysis Section ---
     st.markdown("<hr style='border-color:var(--glass-border); margin:40px 0;'>", unsafe_allow_html=True)
-    st.markdown("### 📊 역사적 거시지표 추세 및 상세 분석")
+    st.markdown("### 역사적 거시지표 추세 및 상세 분석")
     st.caption("지표별 업데이트 주기(Daily, Weekly, Monthly)에 따라 분류하여 시장의 흐름을 다각도로 분석합니다.")
     
     TICKER_LABELS = {
@@ -512,7 +512,7 @@ elif mode == "매크로 분석":
         "ICSA": "<b>주간 실업수당 청구:</b> 고용 시장의 실시간 건전성을 보여주는 주간 지표입니다. 추세적 상승 시 경기 둔화 신호로 해석합니다."
     }
 
-    macro_tabs = st.tabs(["⚡ Market (Daily)", "📅 Weekly (Liquidity/Jobs)", "📉 Monthly (Economy/Inflation)"])
+    macro_tabs = st.tabs(["Market (Daily)", "Weekly (Liquidity/Jobs)", "Monthly (Economy/Inflation)"])
     
     with macro_tabs[0]:
         st.markdown("#### 실시간 시장 지표 (Daily)")
@@ -522,7 +522,7 @@ elif mode == "매크로 분석":
         for t in daily_tickers:
             h = db.get_macro_history(t, days=1000)
             if h is not None and not h.empty:
-                with st.expander(f"📈 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="T10Y2Y")):
+                with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="T10Y2Y")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#4f46e5", width=2)))
@@ -537,7 +537,7 @@ elif mode == "매크로 분석":
         for t in weekly_tickers:
             h = db.get_macro_history(t, days=1500)
             if h is not None and not h.empty:
-                with st.expander(f"📅 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="NET_LIQUIDITY")):
+                with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="NET_LIQUIDITY")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#10b981", width=2)))
@@ -552,7 +552,7 @@ elif mode == "매크로 분석":
         for t in monthly_tickers:
             h = db.get_macro_history(t, days=2500)
             if h is not None and not h.empty:
-                with st.expander(f"📉 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="CPIAUCSL")):
+                with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="CPIAUCSL")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#ef4444", width=2)))

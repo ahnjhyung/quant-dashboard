@@ -216,13 +216,13 @@ class ValueInvestingAnalyzer:
         score = sum(1 for v in scores.values() if v)
         
         if score >= 8:
-            category = '🟢 Strong (강한 매수)'
+            category = 'Strong (강한 매수)'
         elif score >= 6:
-            category = '🟡 Good (매수 고려)'
+            category = 'Good (매수 고려)'
         elif score >= 4:
-            category = '🟠 Neutral (중립)'
+            category = 'Neutral (중립)'
         else:
-            category = '🔴 Weak (매도 주의)'
+            category = 'Weak (매도 주의)'
         
         return {
             'ticker': ticker,

@@ -340,13 +340,13 @@ class SwingTradingAnalyzer:
             bull_ratio = 0.5
         
         if bull_ratio >= 0.65:
-            final_signal = 'BUY 🟢'
+            final_signal = 'BUY'
             confidence = min(0.95, bull_ratio)
         elif bull_ratio <= 0.35:
-            final_signal = 'SELL 🔴'
+            final_signal = 'SELL'
             confidence = min(0.95, 1 - bull_ratio)
         else:
-            final_signal = 'HOLD 🟡'
+            final_signal = 'HOLD'
             confidence = abs(bull_ratio - 0.5) * 2
         
         # 손절/목표가 (ATR 기반)
