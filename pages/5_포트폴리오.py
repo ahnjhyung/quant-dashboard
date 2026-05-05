@@ -503,9 +503,9 @@ else:
                     lookback = st.selectbox("수익률 산출 기간", [3, 5, 7, 10], index=1, format_func=lambda x: f"{x}년")
                     rf_pct = st.number_input("무위험이자율 (%)", value=4.0, step=0.5, min_value=0.0, max_value=15.0)
 
+                optimizer = MacroOptimizer(rf=rf_pct / 100.0)
                 with opt_col2:
                     if st.button("최적 포트폴리오 산출", type="primary"):
-                        optimizer = MacroOptimizer(rf=rf_pct / 100.0)
                         with st.spinner("매크로 지표 분석 및 최적화 중..."):
                             opt_result = optimizer.recommend(lookback_years=lookback)
 
