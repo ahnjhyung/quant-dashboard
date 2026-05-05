@@ -522,10 +522,21 @@ elif mode == "매크로 분석":
         for t in daily_tickers:
             h = db.get_macro_history(t, days=1000)
             if h is not None and not h.empty:
+                # 0 또는 NaN 제거 (휴장일 등 데이터 이상 방지)
+                h = h[h['value'] > 0].dropna()
+                if h.empty: continue
+                
                 with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="T10Y2Y")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#4f46e5", width=2)))
+                    fig.add_trace(go.Scatter(
+                        x=h.index, y=h['value'], 
+                        name=TICKER_LABELS.get(t, t),
+                        mode='lines+markers',
+                        marker=dict(size=4),
+                        line=dict(color="#4f46e5", width=2),
+                        connectgaps=True
+                    ))
                     fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -537,10 +548,20 @@ elif mode == "매크로 분석":
         for t in weekly_tickers:
             h = db.get_macro_history(t, days=1500)
             if h is not None and not h.empty:
+                h = h.dropna()
+                if h.empty: continue
+                
                 with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="NET_LIQUIDITY")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#10b981", width=2)))
+                    fig.add_trace(go.Scatter(
+                        x=h.index, y=h['value'], 
+                        name=TICKER_LABELS.get(t, t),
+                        mode='lines+markers',
+                        marker=dict(size=5),
+                        line=dict(color="#10b981", width=2),
+                        connectgaps=True
+                    ))
                     fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -552,11 +573,26 @@ elif mode == "매크로 분석":
         for t in monthly_tickers:
             h = db.get_macro_history(t, days=2500)
             if h is not None and not h.empty:
+                h = h.dropna()
+                if h.empty: continue
+                
                 with st.expander(f"{TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="CPIAUCSL")):
                     st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
                     fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#ef4444", width=2)))
-                    fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
+                    fig.add_trace(go.Scatter(
+                        x=h.index, y=h['value'], 
+                        name=TICKER_LABELS.get(t, t),
+                        mode='lines+markers',
+                        marker=dict(size=6),
+                        line=dict(color="#ef4444", width=2),
+                        connectgaps=True
+                    ))
+                    y_label = "스프레드 (%)" if t == "BAMLH0A0HYM2" else "지수/비율"
+                    fig.update_layout(
+                        height=350, margin=dict(l=40, r=40, t=20, b=40), 
+                        template="plotly_white",
+                        yaxis=dict(title=y_label)
+                    )
                     st.plotly_chart(fig, use_container_width=True)
 
 # --- Footer ---

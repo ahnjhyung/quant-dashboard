@@ -44,103 +44,105 @@ class MacroDataCollector:
             ]
         }
 
-    def collect_fred_data(self):
-        """FRED 지표 수집 및 적재 (DB 체크 포함)"""
+    def collect_fred_data(self, days: int = 30):
+        """FRED 지표 수집 및 적재 (최근 데이터 업데이트)"""
         if not self.fred:
             print("[ERROR] FRED API Key missing.")
             return
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        start_date = datetime.now() - timedelta(days=days)
 
         for ticker in self.indicators["FRED"]:
             try:
-                # 1. 중복 체크 (GAS가 이미 수집했거나, 오늘 이미 수집했다면 Skip)
-                if self.db.check_macro_exists(ticker, today_str):
-                    print(f"    [SKIP] FRED {ticker}: Already exists for {today_str}")
-                    continue
-
                 print(f"[*] Collecting FRED: {ticker}...")
-                # 최신 1개 관측치만 가져옴 (FRED API 호출 최소화)
-                series = self.fred.get_series(ticker, limit=1)
+                # 최근 'days' 기간의 데이터를 가져옴
+                series = self.fred.get_series(ticker, observation_start=start_date)
                 if series is not None and not series.empty:
-                    date = series.index[-1]
-                    value = series.iloc[-1]
-                    date_str = date.strftime("%Y-%m-%d")
+                    count = 0
+                    for date, value in series.items():
+                        if pd.isna(value): continue
+                        
+                        date_str = date.strftime("%Y-%m-%d")
+                        # 이미 존재하는지 체크
+                        if not self.db.check_macro_exists(ticker, date_str):
+                            self.db.upsert_macro_indicator(ticker, date_str, float(value))
+                            count += 1
                     
-                    if not pd.isna(value):
-                        self.db.upsert_macro_indicator(ticker, date_str, float(value))
-                        print(f"    [OK] FRED {ticker} ({date_str}): {value}")
+                    if count > 0:
+                        print(f"    [OK] FRED {ticker}: {count} new points saved.")
+                    else:
+                        print(f"    [SKIP] FRED {ticker}: No new data.")
                 
                 time.sleep(0.3) # Rate limit 방어
             except Exception as e:
                 print(f"    [ERROR] FRED {ticker} 수집 실패: {e}")
 
     def collect_yfinance_data(self):
-        """yfinance 지표 수집 및 적재 (DB 체크 포함)"""
-        today_str = datetime.now().strftime("%Y-%m-%d")
-
+        """yfinance 지표 수집 및 적재 (최근 5일치 체크)"""
         for ticker in self.indicators["YFINANCE"]:
             try:
-                if self.db.check_macro_exists(ticker, today_str):
-                    print(f"    [SKIP] yfinance {ticker}: Already exists for {today_str}")
-                    continue
-
                 print(f"[*] Collecting yfinance: {ticker}...")
-                data = yf.download(ticker, period="1d", progress=False)
+                data = yf.download(ticker, period="5d", progress=False)
                 if not data.empty:
-                    last_row = data.iloc[-1]
-                    date_str = data.index[-1].strftime("%Y-%m-%d")
-                    val = float(last_row['Close'].iloc[0]) if hasattr(last_row['Close'], 'iloc') else float(last_row['Close'])
+                    count = 0
+                    for date, row in data.iterrows():
+                        date_str = date.strftime("%Y-%m-%d")
+                        val = float(row['Close'].iloc[0]) if hasattr(row['Close'], 'iloc') else float(row['Close'])
+                        
+                        if not self.db.check_macro_exists(ticker, date_str):
+                            self.db.upsert_macro_indicator(ticker, date_str, val)
+                            count += 1
                     
-                    self.db.upsert_macro_indicator(ticker, date_str, val)
-                    print(f"    [OK] yf {ticker} ({date_str}): {val}")
+                    if count > 0:
+                        print(f"    [OK] yf {ticker}: {count} new points saved.")
+                    else:
+                        print(f"    [SKIP] yf {ticker}: No new data.")
             except Exception as e:
                 print(f"    [ERROR] yfinance {ticker} 수집 실패: {e}")
 
-
-
     def calculate_and_save_net_liquidity(self):
         """
-        Net Liquidity 산출 및 저장
-        Formula: Fed Total Assets (WALCL) - TGA (WDTGAL) - Reverse Repo (RRPONTSYD)
-        Units: FRED data is in Millions (WALCL, WDTGAL) and Billions (RRP). 
-        Result will be stored in Billions (B) for easier UI display.
+        Net Liquidity 산출 및 저장 (업데이트 주기 유지)
+        Formula: WALCL - TGA - RRP
         """
         if not self.fred: return
-        print("[*] Calculating NET_LIQUIDITY (Billions USD)...")
+        print("[*] Calculating NET_LIQUIDITY (preserving frequency)...")
         try:
-            # 최근 30일 데이터 확보하여 날짜 매칭
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
+            # 최근 90일 데이터 확보하여 시계열 분석
+            start_date = datetime.now() - timedelta(days=90)
             
             walcl = self.fred.get_series('WALCL', observation_start=start_date).dropna()
             tga = self.fred.get_series('WDTGAL', observation_start=start_date).dropna()
             rrp = self.fred.get_series('RRPONTSYD', observation_start=start_date).dropna()
             
-            # 데이터프레임으로 통합하여 날짜 맞춤
+            # 주간 지표인 WALCL 기준으로 인덱스 생성
             df = pd.DataFrame({'walcl': walcl, 'tga': tga, 'rrp': rrp})
-            df = df.fillna(method='ffill').dropna() # 이전 값으로 채우기 (발표 주기가 다름)
+            # ffill로 다른 지표들의 최신값을 매칭시키되, 인덱스는 원본 날짜 유지
+            df = df.fillna(method='ffill').dropna()
             
-            if not df.empty:
-                latest = df.iloc[-1]
-                # WALCL(M), TGA(M), RRP(B) -> 모두 B(Billions)로 통일
-                # Net Liq (B) = (WALCL / 1000) - (TGA / 1000) - RRP
-                val_walcl_b = latest['walcl'] / 1000.0
-                val_tga_b = latest['tga'] / 1000.0
-                val_rrp_b = latest['rrp']
+            count = 0
+            for date, row in df.iterrows():
+                date_str = date.strftime("%Y-%m-%d")
                 
-                net_liquidity_b = val_walcl_b - val_tga_b - val_rrp_b
-                date_str = df.index[-1].strftime("%Y-%m-%d")
+                # 단위 환산 (B)
+                val_walcl_b = row['walcl'] / 1000.0
+                val_tga_b = row['tga'] / 1000.0
+                val_rrp_b = row['rrp'] # RRP는 이미 B 단위인 경우가 많으나 FRED ticker에 따라 다름 (RRPONTSYD는 B)
                 
-                self.db.upsert_macro_indicator("NET_LIQUIDITY", date_str, float(net_liquidity_b))
-                print(f"    [OK] NET_LIQUIDITY ({date_str}): {net_liquidity_b:,.2f}B USD")
+                net_liq = val_walcl_b - val_tga_b - val_rrp_b
                 
-                # 원본 지표들도 B 단위로 저장 (UI 일관성)
-                self.db.upsert_macro_indicator("WALCL_B", date_str, float(val_walcl_b))
-                self.db.upsert_macro_indicator("TGA_B", date_str, float(val_tga_b))
-                self.db.upsert_macro_indicator("RRP_B", date_str, float(val_rrp_b))
+                # 중복 저장 방지
+                if not self.db.check_macro_exists("NET_LIQUIDITY", date_str):
+                    self.db.upsert_macro_indicator("NET_LIQUIDITY", date_str, float(net_liq))
+                    self.db.upsert_macro_indicator("WALCL_B", date_str, float(val_walcl_b))
+                    self.db.upsert_macro_indicator("TGA_B", date_str, float(val_tga_b))
+                    self.db.upsert_macro_indicator("RRP_B", date_str, float(val_rrp_b))
+                    count += 1
+            
+            print(f"    [OK] NET_LIQUIDITY: {count} new periods calculated.")
+                
         except Exception as e:
-            print(f"    [ERROR] NET_LIQUIDITY 산출 실패: {e}")
+            print(f"    [ERROR] NET_LIQUIDITY 계산 실패: {e}")
 
     def run_all(self):
         print(f"=== [Unified] 매크로 데이터 통합 수집 시작 ({datetime.now()}) ===")
