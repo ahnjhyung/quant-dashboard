@@ -357,11 +357,12 @@ if mode == "마이크로 분석":
                     with f_col1:
                         st.markdown("#### 내재 가치 추정 (현금흐름 할인법)")
                         if "error" not in dcf_data:
+                            dcf_price_str = f"{dcf_data.get('intrinsic_value_per_share', 0):,.0f}" if currency_symbol == "₩" else f"{dcf_data.get('intrinsic_value_per_share', 0):,.2f}"
                             st.markdown(f"""
                             <div class="glass-card">
                                 <div style='display:flex; justify-content:space-between; margin-bottom:20px;'>
                                     <span style='color:var(--text-muted)'>모델 산출 적정 주가</span>
-                                    <span style='font-size:1.7rem; font-weight:700; color:var(--primary);'>${dcf_data.get('intrinsic_value_per_share', 0):,.2f}</span>
+                                    <span style='font-size:1.7rem; font-weight:700; color:var(--primary);'>{currency_symbol}{dcf_price_str}</span>
                                 </div>
                                 <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
                                     <span style='color:var(--text-muted)'>안전 마진 (Margin of Safety)</span>
@@ -376,7 +377,7 @@ if mode == "마이크로 분석":
                             </div>
                             """, unsafe_allow_html=True)
                         else:
-                            st.warning("분석에 필요한 충분한 재무 데이터를 확보하지 못했습니다.")
+                            st.warning("분석에 필요한 재무 제표(잉여현금흐름 등)를 불러오지 못했습니다. Yahoo Finance의 데이터 제공 범위에 따라 제한될 수 있습니다.")
                     
                     with f_col2:
                         st.markdown("#### 재무 건전성 상세 평가 (Piotroski)")
