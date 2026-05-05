@@ -242,12 +242,13 @@ if mode == "마이크로 분석":
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 
                 currency_symbol = "₩" if ticker.endswith((".KS", ".KQ")) else "$"
+                price_str = f"{current_price:,.0f}" if currency_symbol == "₩" else f"{current_price:,.2f}"
                 
                 with m_col1:
                     st.markdown(f"""
                     <div class="glass-card metric-box animate-fade">
                         <div class="metric-label">현재 주가</div>
-                        <div class="metric-value">{currency_symbol}{current_price:,.0f if currency_symbol == "₩" else ",.2f"}</div>
+                        <div class="metric-value">{currency_symbol}{price_str}</div>
                         <div class="metric-delta" style='color:var(--text-muted)'>실시간 시세 데이터</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -425,16 +426,23 @@ if mode == "마이크로 분석":
                         rm = swing_data.get('risk_management', {})
                         
                         trend_label = "상승 추세" if "UP" in cross.get('trend_status', '') else ("하락 추세" if "DOWN" in cross.get('trend_status', '') else "횡보 구간")
+                        
+                        # Pre-format prices for HTML
+                        ema_str = f"{cross.get('ema200', 0):,.0f}" if currency_symbol == "₩" else f"{cross.get('ema200', 0):,.2f}"
+                        atr_str = f"{swing_data.get('atr', 0):,.0f}" if currency_symbol == "₩" else f"{swing_data.get('atr', 0):,.2f}"
+                        target_str = f"{rm.get('target', 0):,.0f}" if currency_symbol == "₩" else f"{rm.get('target', 0):,.2f}"
+                        stop_str = f"{rm.get('stop_loss', 0):,.0f}" if currency_symbol == "₩" else f"{rm.get('stop_loss', 0):,.2f}"
+
                         st.markdown(f"""
                         <div class="glass-card">
                             <p style='margin-bottom:15px;'><b>현재 주가 추세:</b> <span style='color:var(--primary); font-weight:600;'>{trend_label}</span></p>
-                            <p style='margin-bottom:15px;'><b>200일 지수이동평균 (EMA):</b> {currency_symbol}{cross.get('ema200', 0):,.0f if currency_symbol == "₩" else ",.2f"} ({'주가 상회' if cross.get('price_above_ema200') else '주가 하회'})</p>
-                            <p style='margin-bottom:15px;'><b>변동성 지표 (ATR):</b> {currency_symbol}{swing_data.get('atr', 0):,.0f if currency_symbol == "₩" else ",.2f"}</p>
+                            <p style='margin-bottom:15px;'><b>200일 지수이동평균 (EMA):</b> {currency_symbol}{ema_str} ({'주가 상회' if cross.get('price_above_ema200') else '주가 하회'})</p>
+                            <p style='margin-bottom:15px;'><b>변동성 지표 (ATR):</b> {currency_symbol}{atr_str}</p>
                             <hr style='border-color:var(--glass-border); margin:20px 0;'>
                             <p style='color:var(--primary); font-weight:700; margin-bottom:18px;'>포지션 진입 및 청산 가이드</p>
                             <div style='display:grid; grid-template-columns: 1fr 1fr; gap:24px;'>
-                                <div><small style='color:var(--text-muted); font-weight:600;'>진입 권장가</small><br><b style='font-size:1.15rem;'>{currency_symbol}{rm.get('target', 0):,.0f if currency_symbol == "₩" else ",.2f"}</b></div>
-                                <div><small style='color:var(--text-muted); font-weight:600;'>리스크 손절가</small><br><b style='font-size:1.15rem; color:var(--danger);'>{currency_symbol}{rm.get('stop_loss', 0):,.0f if currency_symbol == "₩" else ",.2f"}</b></div>
+                                <div><small style='color:var(--text-muted); font-weight:600;'>진입 권장가</small><br><b style='font-size:1.15rem;'>{currency_symbol}{target_str}</b></div>
+                                <div><small style='color:var(--text-muted); font-weight:600;'>리스크 손절가</small><br><b style='font-size:1.15rem; color:var(--danger);'>{currency_symbol}{stop_str}</b></div>
                                 <div><small style='color:var(--text-muted); font-weight:600;'>손익비 (R/R)</small><br><b style='font-size:1.15rem;'>1 : {rm.get('risk_reward_ratio', 0):.1f}</b></div>
                                 <div><small style='color:var(--text-muted); font-weight:600;'>알고리즘 예상 승률</small><br><b style='font-size:1.15rem;'>{rm.get('win_probability', 0)*100:.1f}%</b></div>
                             </div>
