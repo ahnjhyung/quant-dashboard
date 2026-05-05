@@ -1,6 +1,6 @@
 """
-Fundamental & Swing Analysis Dashboard
-=======================================
+Fundamental & Swing Analysis Dashboard (Premium Edition)
+=======================================================
 개별 종목 분석: 가치투자(DCF, F-Score) + 기술적 분석(RSI, MACD, 볼린저밴드)
 """
 
@@ -10,100 +10,138 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+import time
 
-st.set_page_config(page_title="종목 분석 및 매크로", layout="wide")
+# --- Page Config ---
+st.set_page_config(
+    page_title="Stock Intelligence Pro",
+    page_icon="💎",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ── CSS ──────────────────────────────────────────────────────────────
+# --- Premium CSS (Glassmorphism & Vibrant UI) ---
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
-* { font-family: 'Noto Sans KR', 'Inter', sans-serif; }
-[data-testid="stAppViewContainer"] { background-color: #ffffff; }
-[data-testid="stSidebar"] { background-color: #fafafa; border-right: 1px solid #e5e5e5; }
-h1, h2, h3 { color: #111111; font-weight: 600; }
-.stMarkdown p, .stMarkdown li { color: #333333; }
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
-.metric-card {
-    background: #fafafa;
-    border: 1px solid #e8e8e8;
-    border-radius: 8px;
-    padding: 16px;
+:root {
+    --primary: #6366f1;
+    --primary-dark: #4f46e5;
+    --secondary: #ec4899;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --background: #0f172a;
+    --glass: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+}
+
+* { font-family: 'Outfit', 'Noto Sans KR', sans-serif; }
+
+/* Global Styling */
+[data-testid="stAppViewContainer"] {
+    background: radial-gradient(circle at top right, #1e293b, #0f172a);
+    color: var(--text-main);
+}
+
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stSidebar"] {
+    background-color: rgba(15, 23, 42, 0.95);
+    border-right: 1px solid var(--glass-border);
+}
+
+/* Glassmorphism Cards */
+.glass-card {
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    padding: 24px;
+    margin-bottom: 24px;
+    transition: all 0.3s ease;
+}
+.glass-card:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.metric-box {
     text-align: center;
+    padding: 15px;
 }
-.metric-card .label { font-size: 12px; color: #888; font-weight: 500; }
-.metric-card .value { font-size: 22px; font-weight: 700; color: #111; margin: 4px 0; }
-.metric-card .sub { font-size: 11px; color: #666; }
+.metric-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+}
+.metric-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+.metric-delta {
+    font-size: 0.9rem;
+    margin-top: 4px;
+}
 
-.signal-buy { color: #2e7d32; font-weight: 700; }
-.signal-sell { color: #d32f2f; font-weight: 700; }
-.signal-hold { color: #f57c00; font-weight: 700; }
+/* Verdict Styles */
+.verdict-container {
+    padding: 30px;
+    border-radius: 24px;
+    text-align: center;
+    margin-bottom: 30px;
+    position: relative;
+    overflow: hidden;
+}
+.verdict-container::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.1), transparent);
+    z-index: 1;
+}
+.verdict-buy { background: linear-gradient(135deg, #065f46, #10b981); box-shadow: 0 10px 40px -10px rgba(16, 185, 129, 0.5); }
+.verdict-hold { background: linear-gradient(135deg, #92400e, #f59e0b); box-shadow: 0 10px 40px -10px rgba(245, 158, 11, 0.5); }
+.verdict-sell { background: linear-gradient(135deg, #991b1b, #ef4444); box-shadow: 0 10px 40px -10px rgba(239, 68, 68, 0.5); }
 
-.score-bar {
-    background: #e8e8e8;
-    border-radius: 4px;
-    height: 8px;
-    margin: 4px 0;
+.verdict-title { font-size: 2.5rem; font-weight: 800; margin: 0; z-index: 2; position: relative; color: white; }
+.verdict-score { font-size: 1.1rem; opacity: 0.9; margin-top: 5px; z-index: 2; position: relative; color: white; }
+
+/* Custom Progress Bar */
+.progress-bg { background: rgba(255,255,255,0.1); border-radius: 10px; height: 8px; width: 100%; margin-top: 10px; }
+.progress-fill { height: 100%; border-radius: 10px; transition: width 1s ease-in-out; }
+
+/* Tabs Styling */
+.stTabs [data-baseweb="tab-list"] { gap: 24px; background-color: transparent; }
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    background-color: transparent !important;
+    border: none !important;
+    color: var(--text-muted) !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
 }
-.score-fill {
-    height: 8px;
-    border-radius: 4px;
+.stTabs [aria-selected="true"] {
+    color: var(--primary) !important;
+    border-bottom: 3px solid var(--primary) !important;
 }
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade { animation: fadeIn 0.6s ease-out forwards; }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ── Title ────────────────────────────────────────────────────────────
-st.markdown("# 종목 분석 대시보드")
-st.markdown("가치 분석(DCF, F-Score) 및 기술적 분석(Swing)을 결합하여 종목을 정밀 진단합니다.")
-
-
-# ── Session State Init ───────────────────────────────────────────────
-if "fs_mode" not in st.session_state:
-    st.session_state.fs_mode = None
-
-# ── Sidebar ──────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### Mode")
-    mode = st.radio(
-        "분석 모드 선택",
-        ["개별 종목 분석", "매크로 대시보드"],
-        index=0, label_visibility="collapsed"
-    )
-    st.session_state.fs_mode = mode
-
-    st.markdown("---")
-
-
-
-    if mode == "개별 종목 분석":
-        st.markdown("### 개별 종목 분석")
-        ticker_input = st.text_input(
-            "Ticker",
-            value="AAPL",
-            help="Yahoo Finance 티커를 입력하세요 (예: AAPL, MSFT, 005930.KS)"
-        )
-        analysis_period = st.selectbox(
-            "분석 기간",
-            ["6mo", "1y", "2y", "5y"],
-            index=1,
-            format_func=lambda x: {"6mo": "6개월", "1y": "1년", "2y": "2년", "5y": "5년"}[x]
-        )
-        run_analysis = st.button("분석 실행", use_container_width=True)
-        run_screening = False
-    else:
-        ticker_input = ""
-        analysis_period = "1y"
-        run_analysis = False
-        run_screening = False
-
-    # Macro mode has no sidebar inputs needed
-    run_macro = (mode == "매크로 대시보드")
-
-    st.markdown("---")
-    st.caption(f"v3.1 | {datetime.now().strftime('%Y-%m-%d')}")
-
-
-# ── Analysis Engine Import ───────────────────────────────────────────
+# --- Analysis Engine Import ---
 from analysis.value_investing import ValueInvestingAnalyzer
 from analysis.swing_trading import SwingTradingAnalyzer
 from data_collectors.supabase_manager import SupabaseManager
@@ -112,435 +150,328 @@ value_analyzer = ValueInvestingAnalyzer()
 swing_analyzer = SwingTradingAnalyzer()
 db = SupabaseManager()
 
-
-FONT_FAMILY = "Noto Sans KR, Inter, sans-serif"
-CHART_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
-
-
-# ── Individual Analysis (개별 종목 분석) ──────────────────────────────
-if run_analysis and ticker_input:
-    ticker = ticker_input.strip().upper()
-
-    with st.spinner(f"{ticker} 분석 중..."):
-        # 가치 분석
-        fscore_data = value_analyzer.piotroski_score(ticker)
-        dcf_data = value_analyzer.dcf_valuation(ticker)
-        full_value = value_analyzer.full_value_analysis(ticker)
-
-        # 기술적 분석
-        swing_data = swing_analyzer.full_analysis(ticker, period=analysis_period)
-
-    if "error" in swing_data:
-        st.error(f"기술적 분석 실패: {swing_data['error']}")
-    else:
-        # ── Header Metrics ───────────────────────────────────
-        st.markdown(f"## {ticker} 종합 분석")
-
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        current_price = swing_data.get('current_price', 0)
-        signal = swing_data.get('swing_signal', 'HOLD')
-        confidence = swing_data.get('confidence', 0)
-        ev_pct = full_value.get('expected_value_pct', 0)
-        fscore = fscore_data.get('score', 0)
-
-        signal_class = "signal-buy" if "BUY" in signal else ("signal-sell" if "SELL" in signal else "signal-hold")
-        signal_clean = signal.replace(" 🟢", "").replace(" 🔴", "").replace(" 🟡", "")
-
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="label">현재가</div>
-                <div class="value">${current_price:,.2f}</div>
-                <div class="sub">{swing_data.get('analysis_date', '')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="label">Swing Signal</div>
-                <div class="value {signal_class}">{signal_clean}</div>
-                <div class="sub">신뢰도 {confidence*100:.0f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            ev_color = "signal-buy" if ev_pct > 0 else "signal-sell"
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="label">Expected Value</div>
-                <div class="value {ev_color}">{ev_pct:+.2f}%</div>
-                <div class="sub">EV > 0 = 진입 가능</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col4:
-            score_color = "#2e7d32" if fscore >= 7 else ("#f57c00" if fscore >= 4 else "#d32f2f")
-            score_pct = fscore / 9 * 100
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="label">F-Score</div>
-                <div class="value" style="color:{score_color}">{fscore}/9</div>
-                <div class="score-bar"><div class="score-fill" style="width:{score_pct}%;background:{score_color}"></div></div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col5:
-            intrinsic = dcf_data.get('intrinsic_value_per_share', 0)
-            margin = dcf_data.get('margin_of_safety', 0) * 100
-            margin_color = "signal-buy" if margin > 0 else "signal-sell"
-            if "error" in dcf_data:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="label">DCF 내재가치</div>
-                    <div class="value" style="font-size:14px; color:#999">데이터 없음</div>
-                    <div class="sub">FCF 수동 입력 필요</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="label">DCF 내재가치</div>
-                    <div class="value">${intrinsic:,.2f}</div>
-                    <div class="sub {margin_color}">안전마진 {margin:+.1f}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # ── Chart: Price + Technical Indicators ──────────────
-        tab_chart, tab_fundamental, tab_risk = st.tabs(["기술적 분석", "가치 분석", "리스크 관리"])
-
-        with tab_chart:
-            ohlcv = swing_data.get('ohlcv', pd.DataFrame())
-            if not ohlcv.empty:
-                close = ohlcv['Close']
-                rsi_series = swing_analyzer.calculate_rsi(close)
-                macd_line, signal_line, histogram = swing_analyzer.calculate_macd(close)
-                upper, middle, lower, bw, pct_b = swing_analyzer.bollinger_bands(close)
-
-                fig = make_subplots(
-                    rows=3, cols=1,
-                    shared_xaxes=True,
-                    vertical_spacing=0.04,
-                    row_heights=[0.55, 0.22, 0.23],
-                    subplot_titles=["", "RSI", "MACD"]
-                )
-
-                # Price + Bollinger
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=close, name="종가",
-                    line=dict(color="#333", width=1.5)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=upper, name="상단밴드",
-                    line=dict(color="#aaa", width=0.8, dash="dot")), row=1, col=1)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=lower, name="하단밴드",
-                    line=dict(color="#aaa", width=0.8, dash="dot"),
-                    fill="tonexty", fillcolor="rgba(200,200,200,0.1)"), row=1, col=1)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=middle, name="SMA(20)",
-                    line=dict(color="#1f77b4", width=0.8)), row=1, col=1)
-
-                # EMA 200
-                ema200 = swing_analyzer.calculate_ema(close, 200)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=ema200, name="EMA(200)",
-                    line=dict(color="#ff7f0e", width=1.2, dash="dash")), row=1, col=1)
-
-                # RSI
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=rsi_series, name="RSI",
-                    line=dict(color="#9467bd", width=1.2)), row=2, col=1)
-                fig.add_hline(y=70, line_dash="dot", line_color="#d32f2f", line_width=0.8, row=2, col=1)
-                fig.add_hline(y=30, line_dash="dot", line_color="#2e7d32", line_width=0.8, row=2, col=1)
-
-                # MACD
-                colors = ["#2e7d32" if v >= 0 else "#d32f2f" for v in histogram]
-                fig.add_trace(go.Bar(x=ohlcv.index, y=histogram, name="Histogram",
-                    marker_color=colors), row=3, col=1)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=macd_line, name="MACD",
-                    line=dict(color="#1f77b4", width=1)), row=3, col=1)
-                fig.add_trace(go.Scatter(x=ohlcv.index, y=signal_line, name="Signal",
-                    line=dict(color="#ff7f0e", width=1)), row=3, col=1)
-
-                fig.update_layout(
-                    height=700,
-                    plot_bgcolor="#ffffff",
-                    paper_bgcolor="#ffffff",
-                    font=dict(family=FONT_FAMILY, color="#333"),
-                    legend=dict(orientation="h", y=1.02, x=0, font=dict(size=10)),
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    hovermode="x unified",
-                )
-                for i in range(1, 4):
-                    fig.update_xaxes(gridcolor="#f0f0f0", linecolor="#ccc", row=i, col=1)
-                    fig.update_yaxes(gridcolor="#f0f0f0", linecolor="#ccc", row=i, col=1)
-
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Signal details table
-                st.markdown("#### 신호 상세")
-                sig_data = swing_data.get('signals', {})
-                if sig_data:
-                    rows = []
-                    for indicator, info in sig_data.items():
-                        rows.append({
-                            "지표": indicator,
-                            "신호": info.get('signal', ''),
-                            "값": f"{info.get('value', 0):.2f}",
-                            "근거": info.get('reason', '')
-                        })
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-                else:
-                    st.caption("현재 활성화된 신호가 없습니다.")
-
-        with tab_fundamental:
-            col_f1, col_f2 = st.columns(2)
-
-            with col_f1:
-                st.markdown("#### Piotroski F-Score 상세")
-                details = fscore_data.get('details', {})
-                if details:
-                    f_rows = []
-                    labels = {
-                        'F1_ROA_positive': 'ROA > 0 (수익성)',
-                        'F2_OCF_positive': '영업현금흐름 > 0',
-                        'F3_ROA_improved': 'ROA 개선',
-                        'F4_accruals_low': '발생항목 양호',
-                        'F5_leverage_decreased': '부채비율 < 100%',
-                        'F6_liquidity_improved': '유동비율 > 1.5',
-                        'F7_no_dilution': '신주 발행 없음',
-                        'F8_gross_margin_improved': '매출총이익률 > 20%',
-                        'F9_asset_turnover_improved': '자산회전율 양호',
-                    }
-                    for key, passed in details.items():
-                        f_rows.append({
-                            "항목": labels.get(key, key),
-                            "결과": "PASS" if passed else "FAIL",
-                        })
-                    df_f = pd.DataFrame(f_rows)
-                    st.dataframe(df_f, use_container_width=True, hide_index=True)
-
-                st.markdown("#### 기본 재무 지표")
-                fin_metrics = {
-                    "PER": fscore_data.get('per', '-'),
-                    "PBR": fscore_data.get('pbr', '-'),
-                    "ROE (%)": f"{fscore_data.get('roe', 0):.1f}",
-                    "유동비율": fscore_data.get('current_ratio', '-'),
-                    "부채비율": fscore_data.get('debt_to_equity', '-'),
-                }
-                st.dataframe(
-                    pd.DataFrame([fin_metrics]),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            with col_f2:
-                st.markdown("#### DCF Valuation")
-                if "error" not in dcf_data:
-                    dcf_metrics = {
-                        "FCF (base)": f"${dcf_data.get('fcf_base', 0):,.0f}",
-                        "내재가치 (주당)": f"${dcf_data.get('intrinsic_value_per_share', 0):,.2f}",
-                        "현재가": f"${dcf_data.get('current_price', 0):,.2f}",
-                        "안전마진": f"{dcf_data.get('margin_of_safety', 0)*100:+.1f}%",
-                        "Upside": f"{dcf_data.get('upside_pct', 0):+.1f}%",
-                    }
-                    for k, v in dcf_metrics.items():
-                        st.markdown(f"**{k}:** {v}")
-
-                    # DCF projection chart
-                    projected = dcf_data.get('projected_fcf', [])
-                    pv = dcf_data.get('pv_fcf', [])
-                    if projected:
-                        fig_dcf = go.Figure()
-                        years = list(range(1, len(projected) + 1))
-                        fig_dcf.add_trace(go.Bar(
-                            x=years, y=[f/1e9 for f in projected],
-                            name="FCF (10억$)", marker_color="#1f77b4"
-                        ))
-                        fig_dcf.add_trace(go.Bar(
-                            x=years, y=[f/1e9 for f in pv],
-                            name="PV (10억$)", marker_color="#ff7f0e"
-                        ))
-                        fig_dcf.update_layout(
-                            title="DCF 예측 현금흐름",
-                            height=350,
-                            barmode="group",
-                            plot_bgcolor="#fff", paper_bgcolor="#fff",
-                            font=dict(family=FONT_FAMILY, color="#333"),
-                            xaxis=dict(title="연도", gridcolor="#f0f0f0"),
-                            yaxis=dict(title="10억 $", gridcolor="#f0f0f0"),
-                            margin=dict(l=0, r=0, t=40, b=0),
-                        )
-                        st.plotly_chart(fig_dcf, use_container_width=True)
-                else:
-                    st.caption("DCF 데이터를 가져올 수 없습니다. FCF를 수동 입력하세요.")
-
-                st.markdown("#### EV (기대값) 산출")
-                ev_data = full_value
-                if ev_data:
-                    ev_metrics = {
-                        "추정 승률": f"{ev_data.get('win_probability', 0)*100:.1f}%",
-                        "평균 이익률": f"+{ev_data.get('avg_profit_pct', 0):.1f}%",
-                        "평균 손실률": f"-{ev_data.get('avg_loss_pct', 0):.1f}%",
-                        "Expected Value": f"{ev_data.get('expected_value_pct', 0):+.2f}%",
-                    }
-                    for k, v in ev_metrics.items():
-                        st.markdown(f"**{k}:** {v}")
-                    if ev_data.get('expected_value_pct', 0) > 0:
-                        st.success("EV > 0: 진입 가능 조건 충족")
-                    else:
-                        st.warning("EV <= 0: 진입 보류 권고")
-
-        with tab_risk:
-            rm = swing_data.get('risk_management', {})
-            col_r1, col_r2 = st.columns(2)
-
-            with col_r1:
-                st.markdown("#### ATR 기반 리스크 관리")
-                risk_items = {
-                    "진입가": f"${rm.get('entry', 0):,.2f}",
-                    "손절가 (2xATR)": f"${rm.get('stop_loss', 0):,.2f}",
-                    "목표가 (3xATR)": f"${rm.get('target', 0):,.2f}",
-                    "위험률": f"{rm.get('risk_pct', 0):.2f}%",
-                    "Risk/Reward": f"1:{rm.get('risk_reward_ratio', 0):.1f}",
-                }
-                for k, v in risk_items.items():
-                    st.markdown(f"**{k}:** {v}")
-
-            with col_r2:
-                st.markdown("#### 추세 분석")
-                cross = swing_data.get('ma_cross', {})
-                trend_items = {
-                    "MA(50)": f"${cross.get('ma50', 0):,.2f}" if cross.get('ma50') else "N/A",
-                    "MA(200)": f"${cross.get('ma200', 0):,.2f}" if cross.get('ma200') else "N/A",
-                    "EMA(200)": f"${cross.get('ema200', 0):,.2f}" if cross.get('ema200') else "N/A",
-                    "200 EMA 위": "Yes" if cross.get('price_above_ema200') else "No",
-                    "추세 상태": cross.get('trend_status', 'N/A'),
-                    "마지막 골든크로스": cross.get('last_golden_cross', 'N/A'),
-                    "마지막 데드크로스": cross.get('last_dead_cross', 'N/A'),
-                }
-                for k, v in trend_items.items():
-                    st.markdown(f"**{k}:** {v}")
-
-
-
-
-
-# ── Macro Dashboard ──────────────────────────────────────────────────
-if run_macro:
+# --- Sidebar Configuration ---
+with st.sidebar:
+    st.image("https://img.icons8.com/fluency/96/diamond.png", width=60)
+    st.markdown("<h2 style='margin-top:0;'>Quant Intelligence</h2>", unsafe_allow_html=True)
+    
+    st.markdown("### Analysis Suite")
+    mode = st.radio("Select View", ["Single Stock Analysis", "Macro Liquidity"], index=0)
+    
     st.markdown("---")
-    st.markdown("## Macro Indicators Dashboard")
-    st.markdown("Supabase `macro_indicators` 테이블에서 FRED/yfinance 데이터를 조회합니다.")
+    
+    if mode == "Single Stock Analysis":
+        ticker_input = st.text_input("Ticker Symbol", value="NVDA", help="e.g., TSLA, AAPL, 005930.KS")
+        period = st.selectbox("Historical Lookback", ["6mo", "1y", "2y", "5y"], index=1)
+        run_btn = st.button("RUN DEEP ANALYSIS", use_container_width=True, type="primary")
+    else:
+        run_btn = False
+        ticker_input = ""
 
-    MACRO_GROUPS = {
-        "금리 / 수익률곡선": ["DGS2", "DGS10", "T10Y2Y", "T10Y3M", "GS10"],
-        "유동성": ["M2SL", "WALCL", "RRPONTSYD", "NET_LIQUIDITY"],
-        "물가 / 인플레이션": ["CPIAUCSL", "PCEPI", "T5YIE", "REAINTRATREARAT10Y"],
-        "스트레스 / 리스크": ["VIXCLS", "NFCI", "TEDRATE", "BAMLH0A0HYM2"],
-        "실물 경제": ["UNRATE", "PAYEMS", "INDPRO", "GDP"],
-        "시장 자산": ["BTC-USD", "GC=F", "CL=F", "DX-Y.NYB"],
-    }
+    st.markdown("---")
+    st.caption("En# --- Main Dashboard Logic ---
 
-    MACRO_DESCRIPTIONS = {
-        "DGS2": "미국 2년 국채 금리 — 단기 금리 기대 반영",
-        "DGS10": "미국 10년 국채 금리 — 장기 금리의 벤치마크",
-        "T10Y2Y": "10Y-2Y 스프레드 — 역전 시(음수) 경기침체 선행 신호",
-        "T10Y3M": "10Y-3M 스프레드 — 가장 신뢰도 높은 경기침체 예측 지표",
-        "GS10": "10년 국채 월평균 — 추세 확인용",
-        "M2SL": "M2 통화량 — 시장에 풀린 돈의 총량",
-        "WALCL": "Fed 총자산 — 양적완화(QE) 규모 추적",
-        "RRPONTSYD": "역레포(Reverse Repo) — 단기 유동성 흡수 규모",
-        "NET_LIQUIDITY": "순유동성 = Fed자산 - 재무부잔고 - 역레포 — 시장 실질 유동성",
-        "CPIAUCSL": "소비자물가지수(CPI) — 인플레이션 핵심 지표",
-        "PCEPI": "PCE 물가지수 — Fed가 선호하는 인플레이션 측정치",
-        "T5YIE": "5년 기대인플레이션 — 시장이 예상하는 향후 인플레",
-        "REAINTRATREARAT10Y": "10년 실질금리 — 명목금리 - 인플레이션",
-        "VIXCLS": "VIX 공포지수 — S&P500 옵션 내재변동성",
-        "NFCI": "금융여건지수 — 음수=완화, 양수=긴축",
-        "TEDRATE": "TED 스프레드 — 은행 간 신용 리스크 척도",
-        "BAMLH0A0HYM2": "HY 스프레드 — 정크본드 위험 프리미엄",
-        "UNRATE": "실업률 — 노동시장 건전성",
-        "PAYEMS": "비농 취업자 수 — 경기 동행 지표",
-        "INDPRO": "산업생산지수 — 제조업 활동 측정",
-        "GDP": "국내옵생산 — 경제 규모의 총괄 지표",
-        "BTC-USD": "비트코인 — 암호화폐 대표 자산",
-        "GC=F": "금 선물 — 안전자산 / 인플레 헤지",
-        "CL=F": "원유 선물(WTI) — 에너지 / 인플레 선행",
-        "DX-Y.NYB": "달러 인덱스(DXY) — 달러 강세 측정",
-    }
-
-    # Latest values card row
-    with st.spinner("매크로 데이터 로딩 중..."):
-        latest = db.get_latest_macro()
-
-    if latest:
-        st.markdown("### 주요 지표 현재값")
-        cols = st.columns(6)
-        display_keys = [("DGS10", "미국 10년 금리", "%"), ("T10Y2Y", "10Y-2Y 스프레드", "%"),
-                        ("VIXCLS", "VIX", ""), ("NET_LIQUIDITY", "순유동성", "B"),
-                        ("DEXKOUS", "원/달러 환율", "원"), ("BAMLH0A0HYM2", "HY 스프레드", "%")]
-        for i, (key, label, unit) in enumerate(display_keys):
-            d = latest.get(key, {})
-            cur = d.get("current", 0)
-            prev = d.get("prev", cur)
-            delta = cur - prev
-            delta_str = f"{delta:+.2f}" if delta != 0 else "-"
+if mode == "Single Stock Analysis":
+    if not ticker_input:
+        st.info("💡 Enter a ticker symbol in the sidebar to begin analysis.")
+    else:
+        # Use session state to persist analysis results across tab changes
+        if run_btn:
+            ticker = ticker_input.strip().upper()
             
-            color = "" # Default
+            with st.spinner(f"🚀 Initializing AI-Driven Hybrid Analysis for {ticker}..."):
+                # Fetch Data
+                fscore_data = value_analyzer.piotroski_score(ticker)
+                dcf_data = value_analyzer.dcf_valuation(ticker)
+                full_val = value_analyzer.full_value_analysis(ticker)
+                swing_data = swing_analyzer.full_analysis(ticker, period=period)
                 
+                # Store in session state
+                st.session_state['ticker'] = ticker
+                st.session_state['fscore_data'] = fscore_data
+                st.session_state['dcf_data'] = dcf_data
+                st.session_state['full_val'] = full_val
+                st.session_state['swing_data'] = swing_data
+
+        if 'ticker' in st.session_state and st.session_state['ticker'] == ticker_input.strip().upper():
+            ticker = st.session_state['ticker']
+            fscore_data = st.session_state['fscore_data']
+            dcf_data = st.session_state['dcf_data']
+            full_val = st.session_state['full_val']
+            swing_data = st.session_state['swing_data']
+
+            if "error" in swing_data:
+                st.error(f"Failed to fetch data for {ticker}. Please check the ticker symbol.")
+            else:
+                # 1. TOP VERDICT SECTION
+                current_price = swing_data.get('current_price', 0)
+                signal = swing_data.get('swing_signal', 'HOLD')
+                confidence = swing_data.get('confidence', 0)
+                fscore = fscore_data.get('score', 0)
+                upside = full_val.get('upside_pct', 0)
+                
+                # Technical EV from swing_data
+                tech_rm = swing_data.get('risk_management', {})
+                tech_ev = tech_rm.get('expected_value_pct', 0) * 100 # Convert to %
+                
+                # Fundamental EV from full_val
+                fund_ev = full_val.get('expected_value_pct', 0)
+                
+                # Hybrid EV (Weighted Average)
+                hybrid_ev = (tech_ev * 0.5) + (fund_ev * 0.5)
+                
+                # Hybrid Score Calculation (40% Fundamental, 30% DCF, 30% Technical)
+                f_norm = fscore / 9
+                d_norm = min(max((upside + 20) / 100, 0), 1)
+                t_norm = confidence if "BUY" in signal else (1 - confidence if "SELL" in signal else 0.5)
+                
+                hybrid_score = (f_norm * 0.4 + d_norm * 0.3 + t_norm * 0.3) * 100
+                
+                if hybrid_score >= 70:
+                    v_class, v_text, v_sub = "verdict-buy", "STRONG BUY", "Convergent Signal: Fundamental & Technical Alignment"
+                elif hybrid_score >= 45:
+                    v_class, v_text, v_sub = "verdict-hold", "ACCUMULATE", "Mixed Signals: Potential Opportunity on Pullback"
+                else:
+                    v_class, v_text, v_sub = "verdict-sell", "AVOID / SELL", "Negative Convergence: High Structural & Momentum Risk"
+
+                st.markdown(f"""
+                <div class="verdict-container {v_class} animate-fade">
+                    <p style='color:rgba(255,255,255,0.8); margin:0; text-transform:uppercase; letter-spacing:2px;'>Hybrid Intelligence Verdict for {ticker}</p>
+                    <h1 class="verdict-title">{v_text}</h1>
+                    <p class="verdict-score">Consensus Score: {hybrid_score:.1f}% | {v_sub}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 2. KEY METRICS GRID (Side-by-Side Fundamentals and Technicals)
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                
+                with m_col1:
+                    st.markdown(f"""
+                    <div class="glass-card metric-box animate-fade">
+                        <div class="metric-label">Current Price</div>
+                        <div class="metric-value">${current_price:,.2f}</div>
+                        <div class="metric-delta" style='color:var(--text-muted)'>Asset Value</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with m_col2:
+                    ev_color = "var(--success)" if hybrid_ev > 0 else "var(--danger)"
+                    st.markdown(f"""
+                    <div class="glass-card metric-box animate-fade">
+                        <div class="metric-label">Hybrid Expected Value</div>
+                        <div class="metric-value" style='color:{ev_color}'>{hybrid_ev:+.2f}%</div>
+                        <div class="metric-delta" style='color:var(--text-muted)'>Agent Combined Projection</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with m_col3:
+                    f_color = "var(--success)" if fscore >= 7 else ("var(--warning)" if fscore >= 4 else "var(--danger)")
+                    st.markdown(f"""
+                    <div class="glass-card metric-box animate-fade">
+                        <div class="metric-label">Financial Integrity</div>
+                        <div class="metric-value" style='color:{f_color}'>{fscore}/9</div>
+                        <div class="progress-bg"><div class="progress-fill" style="width:{fscore/9*100}%; background:{f_color}"></div></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with m_col4:
+                    sig_color = "var(--success)" if "BUY" in signal else ("var(--danger)" if "SELL" in signal else "var(--warning)")
+                    st.markdown(f"""
+                    <div class="glass-card metric-box animate-fade">
+                        <div class="metric-label">Momentum Signal</div>
+                        <div class="metric-value" style='color:{sig_color}'>{signal}</div>
+                        <div class="metric-delta" style='color:var(--text-muted)'>Confidence: {confidence*100:.0f}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # 3. DETAILED ANALYSIS TABS
+                tab1, tab2, tab3 = st.tabs(["🚀 HYBRID EXECUTIVE SUMMARY", "💎 FUNDAMENTAL DEEP-DIVE", "📈 TECHNICAL PRECISION"])
+                
+                with tab1:
+                    col_left, col_right = st.columns([2, 1])
+                    with col_left:
+                        st.markdown("### Integrated Market Context")
+                        # High-End Charting
+                        ohlcv = swing_data.get('ohlcv', pd.DataFrame())
+                        if not ohlcv.empty:
+                            fig = make_subplots(
+                                rows=2, cols=1, shared_xaxes=True,
+                                vertical_spacing=0.03, row_heights=[0.7, 0.3]
+                            )
+                            # Price & BB
+                            upper, mid, lower, _, _ = swing_analyzer.bollinger_bands(ohlcv['Close'])
+                            fig.add_trace(go.Candlestick(x=ohlcv.index, open=ohlcv['Open'], high=ohlcv['High'], low=ohlcv['Low'], close=ohlcv['Close'], name="Price"), row=1, col=1)
+                            fig.add_trace(go.Scatter(x=ohlcv.index, y=upper, line=dict(color='rgba(255,255,255,0.2)', width=1), name="Upper BB"), row=1, col=1)
+                            fig.add_trace(go.Scatter(x=ohlcv.index, y=lower, line=dict(color='rgba(255,255,255,0.2)', width=1), fill='tonexty', name="Lower BB"), row=1, col=1)
+                            
+                            # Volume
+                            fig.add_trace(go.Bar(x=ohlcv.index, y=ohlcv['Volume'], name="Volume", marker_color="rgba(99, 102, 241, 0.4)"), row=2, col=1)
+                            
+                            fig.update_layout(
+                                height=500, template="plotly_dark",
+                                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                                xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=0, b=0)
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                    with col_right:
+                        st.markdown("### Strategic Rationale")
+                        st.markdown(f"""
+                        <div class="glass-card">
+                            <h4 style='margin-top:0; color:var(--primary);'>Hybrid Thesis</h4>
+                            <p style='font-size:0.9rem; color:var(--text-muted);'>
+                                {ticker} exhibits a <b>{v_text}</b> profile. 
+                                <br><br>
+                                <b>Fundamental Agent:</b> {fscore_data['category']} based on Piotroski criteria. 
+                                {'Undervalued' if upside > 15 else 'Fairly Valued' if upside > -5 else 'Overvalued'} with <b>{upside:+.1f}%</b> margin.
+                                <br><br>
+                                <b>Technical Agent:</b> <b>{signal}</b> signal detected with <b>{confidence*100:.0f}%</b> confidence. 
+                                RSI is at <b>{swing_data['rsi']['value']}</b>.
+                            </p>
+                            <hr style='border-color:var(--glass-border);'>
+                            <p style='font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;'>Agent EV Consolidation</p>
+                            <div style='display:flex; justify-content:space-between; margin-bottom:10px;'>
+                                <span>Fundamental EV</span>
+                                <span style='color:var(--success)'>{fund_ev:+.2f}%</span>
+                            </div>
+                            <div style='display:flex; justify-content:space-between; margin-bottom:10px;'>
+                                <span>Technical EV</span>
+                                <span style='color:var(--success)'>{tech_ev:+.2f}%</span>
+                            </div>
+                            <div style='display:flex; justify-content:space-between; font-weight:700; border-top:1px solid var(--glass-border); padding-top:10px;'>
+                                <span>Hybrid Consensus</span>
+                                <span style='color:var(--primary)'>{hybrid_ev:+.2f}%</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown("#### Formulaic Rationale")
+                        st.latex(r"EV_{Hybrid} = \frac{EV_{Fund} + EV_{Tech}}{2}")
+                        st.latex(r"EV = (P_{win} \times Profit) - (P_{loss} \times Loss)")
+
+                with tab2:
+                    st.markdown("### Fundamental Value Architecture")
+                    f_col1, f_col2 = st.columns(2)
+                    with f_col1:
+                        st.markdown("#### Intrinsic DCF Analysis")
+                        if "error" not in dcf_data:
+                            st.markdown(f"""
+                            <div class="glass-card">
+                                <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
+                                    <span style='color:var(--text-muted)'>Fair Value Estimate</span>
+                                    <span style='font-size:1.5rem; font-weight:700;'>${dcf_data.get('intrinsic_value_per_share', 0):,.2f}</span>
+                                </div>
+                                <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
+                                    <span style='color:var(--text-muted)'>Margin of Safety</span>
+                                    <span style='color:var(--success)'>{dcf_data.get('margin_of_safety', 0)*100:.1f}%</span>
+                                </div>
+                                <div style='display:flex; justify-content:space-between;'>
+                                    <span style='color:var(--text-muted)'>Terminal Growth</span>
+                                    <span>{dcf_data.get('parameters', {}).get('terminal_growth', 0)*100:.1f}%</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.caption("Valuation based on 10-year FCF projection and WACC discount model.")
+                        else:
+                            st.warning("Financial data insufficient for DCF calculation.")
+                    
+                    with f_col2:
+                        st.markdown("#### Financial Structural Integrity (F-Score)")
+                        details = fscore_data.get('details', {})
+                        if details:
+                            f_df = pd.DataFrame([
+                                {"Criteria": k.replace("F", "").replace("_", " ").title(), "Status": "PASS ✅" if v else "FAIL ❌"}
+                                for k, v in details.items()
+                            ])
+                            st.dataframe(f_df, hide_index=True, use_container_width=True)
+
+                with tab3:
+                    st.markdown("### Technical Momentum Precision")
+                    t_col1, t_col2 = st.columns(2)
+                    with t_col1:
+                        st.markdown("#### Technical Oscillator Signals")
+                        t_sigs = swing_data.get('signals', {})
+                        for name, info in t_sigs.items():
+                            color = "var(--success)" if "BUY" in info['signal'] else ("var(--danger)" if "SELL" in info['signal'] else "var(--warning)")
+                            st.markdown(f"""
+                            <div style='padding:15px; border-left:4px solid {color}; background:var(--glass); border-radius:8px; margin-bottom:12px;'>
+                                <div style='display:flex; justify-content:space-between;'>
+                                    <b style='color:var(--text-main)'>{name}</b>
+                                    <span style='color:{color}; font-weight:600;'>{info['signal']}</span>
+                                </div>
+                                <p style='margin:5px 0 0 0; font-size:0.85rem; color:var(--text-muted);'>{info['reason']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    with t_col2:
+                        st.markdown("#### Trend & Volatility Metrics")
+                        cross = swing_data.get('ma_cross', {})
+                        rm = swing_data.get('risk_management', {})
+                        
+                        st.markdown(f"""
+                        <div class="glass-card">
+                            <p><b>Trend:</b> {cross.get('trend_status', 'N/A')}</p>
+                            <p><b>200 EMA:</b> ${cross.get('ema200', 0):,.2f} ({'Above' if cross.get('price_above_ema200') else 'Below'})</p>
+                            <p><b>Volatility (ATR):</b> ${swing_data.get('atr', 0):,.2f}</p>
+                            <hr style='border-color:var(--glass-border);'>
+                            <p style='color:var(--primary); font-weight:600;'>Execution Matrix</p>
+                            <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px;'>
+                                <div><small>Target</small><br><b>${rm.get('target', 0):,.2f}</b></div>
+                                <div><small>Stop Loss</small><br><b>${rm.get('stop_loss', 0):,.2f}</b></div>
+                                <div><small>Risk/Reward</small><br><b>1 : {rm.get('risk_reward_ratio', 0):.1f}</b></div>
+                                <div><small>Win Prob.</small><br><b>{rm.get('win_probability', 0)*100:.1f}%</b></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+elif mode == "Macro Liquidity":
+    st.markdown("<h2 class='animate-fade'>Global Macro Intelligence</h2>", unsafe_allow_html=True)
+    
+    with st.spinner("Synchronizing Global Macro Data..."):
+        latest = db.get_latest_macro()
+        
+    if latest:
+        cols = st.columns(6)
+        display_map = [
+            ("DGS10", "US 10Y", "%"), ("T10Y2Y", "Yield Curve", "%"),
+            ("VIXCLS", "VIX", ""), ("NET_LIQUIDITY", "Net Liq", "B"),
+            ("DEXKOUS", "USD/KRW", "₩"), ("BAMLH0A0HYM2", "HY Spread", "%")
+        ]
+        for i, (key, label, unit) in enumerate(display_map):
+            d = latest.get(key, {})
+            val = d.get("current", 0)
+            delta = val - d.get("prev", val)
             with cols[i]:
                 st.markdown(f"""
-                <div class="metric-card">
-                    <div class="label">{label}</div>
-                    <div class="value {color}">{cur:.1f}{unit}</div>
-                    <div class="sub">{delta_str}</div>
+                <div class="glass-card metric-box animate-fade">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-value" style='font-size:1.4rem;'>{val:.2f}{unit}</div>
+                    <div class="metric-delta" style='color:{"#10b981" if delta <=0 else "#ef4444"}'>{delta:+.2f}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-    # Time series charts
-    st.markdown("### 시계열 추이")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        selected_group = st.selectbox("지표 그룹", list(MACRO_GROUPS.keys()))
-    with c2:
-        period_label = st.selectbox("기간", ["1Y", "3Y", "5Y", "10Y", "ALL"], index=2)
-    period_days = {"1Y": 365, "3Y": 1095, "5Y": 1825, "10Y": 3650, "ALL": 9999}[period_label]
-    tickers_to_show = MACRO_GROUPS[selected_group]
+    # Historical Group Charts
+    st.markdown("### Strategic Market Dimensions")
+    MACRO_GROUPS = {
+        "Liquidity / Central Bank": ["M2SL", "WALCL", "NET_LIQUIDITY"],
+        "Treasury Yields": ["DGS2", "DGS10", "T10Y2Y", "T10Y3M"],
+        "Risk & Inflation": ["CPIAUCSL", "VIXCLS", "BAMLH0A0HYM2"],
+    }
+    grp = st.selectbox("Market Dimension", list(MACRO_GROUPS.keys()))
+    
+    fig_m = go.Figure()
+    for t in MACRO_GROUPS[grp]:
+        h = db.get_macro_history(t, days=1825)
+        if h is not None and not h.empty:
+            fig_m.add_trace(go.Scatter(x=h.index, y=h['value'], name=t, line=dict(width=2)))
+            
+    fig_m.update_layout(
+        height=450, template="plotly_dark",
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=10, b=0)
+    )
+    st.plotly_chart(fig_m, use_container_width=True)
 
-    with st.spinner(f"{selected_group} 데이터 로딩..."):
-        db.prefetch_macro_history(tickers_to_show, days=period_days)
-        fig_macro = go.Figure()
-        has_data = False
-        for t in tickers_to_show:
-            hist = db.get_macro_history(t, days=period_days)
-            if hist is not None and not hist.empty:
-                fig_macro.add_trace(go.Scatter(
-                    x=hist.index, y=hist['value'], name=t,
-                    line=dict(width=1.5), mode='lines'
-                ))
-                has_data = True
-
-    if has_data:
-        fig_macro.update_layout(
-            height=450,
-            plot_bgcolor="#fff", paper_bgcolor="#fff",
-            font=dict(family=FONT_FAMILY, color="#333"),
-            legend=dict(orientation="h", y=1.05, x=0),
-            margin=dict(l=0, r=0, t=20, b=0),
-            hovermode="x unified",
-            xaxis=dict(gridcolor="#f0f0f0"),
-            yaxis=dict(gridcolor="#f0f0f0"),
-        )
-        st.plotly_chart(fig_macro, use_container_width=True)
-
-        # 선택된 그룹의 지표 설명 표시
-        with st.expander("선택된 지표 설명", expanded=False):
-            for t in tickers_to_show:
-                desc = MACRO_DESCRIPTIONS.get(t, "")
-                if desc:
-                    st.markdown(f"- **{t}**: {desc}")
-    else:
-        st.warning("Supabase에 해당 지표 데이터가 없습니다. `macro_data_collector.py`를 먼저 실행하세요.")
-
-
-
-# ── Default State ────────────────────────────────────────────────────
-if mode == "개별 종목 분석" and not run_analysis:
-    st.info("사이드바에서 티커를 입력하고 '분석 실행' 버튼을 클릭하세요.")
+# --- Footer ---
+st.markdown("---")
+st.markdown("<p style='text-align:center; color:var(--text-muted); font-size:0.8rem;'>Quant Intelligence Dashboard v4.1 Platinum | Secure Multi-Agent System | Data Unidirectionality Maintained</p>", unsafe_allow_html=True)
