@@ -686,15 +686,26 @@ else:
                                     hovertemplate=f"{ast['ticker']}<br>수익률: {ast['expected_return']:.1f}%<br>변동성: {ast['volatility']:.1f}%<extra></extra>",
                                 ))
                             fig_ef.update_layout(
-                                title="효율적투자선 및 자본시장선(CML)",
-                                height=550,
+                                title=dict(
+                                    text="효율적투자선 및 자본시장선(CML)",
+                                    x=0.5, y=0.95, xanchor='center', yanchor='top',
+                                    font=dict(size=18)
+                                ),
+                                height=600,
                                 plot_bgcolor="#ffffff",
                                 paper_bgcolor="#ffffff",
                                 xaxis=dict(title="변동성 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
                                 yaxis=dict(title="기대수익률 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
                                 font=dict(family="Pretendard, sans-serif", color="#333"),
-                                margin=dict(l=70, r=40, t=100, b=60),
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                margin=dict(l=70, r=40, t=100, b=100),
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="top",
+                                    y=-0.15,
+                                    xanchor="center",
+                                    x=0.5,
+                                    bgcolor="rgba(255,255,255,0.5)"
+                                )
                             )
                             st.plotly_chart(fig_ef, use_container_width=True)
 

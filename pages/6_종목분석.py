@@ -491,36 +491,73 @@ elif mode == "매크로 분석":
                 </div>
                 """, unsafe_allow_html=True)
 
-    # Historical Group Charts
-    st.markdown("### 역사적 거시지표 추세 분석")
-    MACRO_GROUPS = {
-        "유동성 구성 요소 (Assets, TGA, RRP)": ["WALCL_B", "TGA_B", "RRP_B", "NET_LIQUIDITY"],
-        "채권 금리 및 수익률 곡선": ["DGS2", "DGS10", "T10Y2Y", "T10Y3M"],
-        "인플레이션 및 리스크 지표": ["CPIAUCSL", "VIXCLS", "BAMLH0A0HYM2"],
-    }
-    grp = st.selectbox("시각화 지표 그룹 선택", list(MACRO_GROUPS.keys()))
+    # --- Historical Trend Analysis Section ---
+    st.markdown("<hr style='border-color:var(--glass-border); margin:40px 0;'>", unsafe_allow_html=True)
+    st.markdown("### 📊 역사적 거시지표 추세 및 상세 분석")
+    st.caption("지표별 업데이트 주기(Daily, Weekly, Monthly)에 따라 분류하여 시장의 흐름을 다각도로 분석합니다.")
     
     TICKER_LABELS = {
-        "WALCL_B": "연준 총자산(B)", "TGA_B": "재무부 잔고(TGA)", "RRP_B": "역레포(RRP)", "NET_LIQUIDITY": "실질 순유동성",
-        "DGS2": "미 2년물 국채", "DGS10": "미 10년물 국채", "T10Y2Y": "금리차 (10Y-2Y)", "T10Y3M": "금리차 (10Y-3M)",
-        "CPIAUCSL": "미국 CPI", "VIXCLS": "공포지수 (VIX)", "BAMLH0A0HYM2": "하이일드 스프레드"
+        "WALCL_B": "연준 총자산(Billions)", "TGA_B": "재무부 현금잔고(TGA)", "RRP_B": "역레포(RRP)", "NET_LIQUIDITY": "실질 순유동성",
+        "DGS2": "미 2년물 국채금리", "DGS10": "미 10년물 국채금리", "T10Y2Y": "장단기 금리차(10Y-2Y)", "T10Y3M": "금리차(10Y-3M)",
+        "CPIAUCSL": "미국 소비자물가지수(CPI)", "VIXCLS": "변동성 지수(VIX)", "BAMLH0A0HYM2": "하이일드 스프레드",
+        "DEXKOUS": "원/달러 환율", "ICSA": "신규 실업수당 청구건수", "UNRATE": "미국 실업률"
     }
+
+    TICKER_DESCS = {
+        "NET_LIQUIDITY": "<b>실질 순유동성:</b> 연준의 총자산에서 정부 잔고와 역레포를 뺀 수치로, 실제 시장에 풀린 달러 유동성을 의미합니다. 주가와 높은 상관관계를 보입니다.",
+        "T10Y2Y": "<b>장단기 금리차:</b> 경기 침체의 가장 강력한 선행 지표입니다. 마이너스(역전) 후 다시 플러스로 돌아올 때(Uninversion) 역사적으로 침체가 발생했습니다.",
+        "VIXCLS": "<b>VIX (공포지수):</b> 시장의 불안 수준을 나타냅니다. 30 이상은 극도의 공포(매수 기회), 15 미만은 과도한 낙관(조정 주의)을 시사합니다.",
+        "WALCL_B": "<b>연준 총자산:</b> 양적완화(QE)나 긴축(QT)의 척도입니다. 자산이 늘어나면 유동성이 공급되어 자산 가격에 우호적입니다.",
+        "TGA_B": "<b>TGA (정부 잔고):</b> 재무부가 보유한 현금입니다. 정부가 돈을 쓰면 TGA가 줄어들고 시중 유동성은 늘어납니다.",
+        "ICSA": "<b>주간 실업수당 청구:</b> 고용 시장의 실시간 건전성을 보여주는 주간 지표입니다. 추세적 상승 시 경기 둔화 신호로 해석합니다."
+    }
+
+    macro_tabs = st.tabs(["⚡ Market (Daily)", "📅 Weekly (Liquidity/Jobs)", "📉 Monthly (Economy/Inflation)"])
     
-    fig_m = go.Figure()
-    for t in MACRO_GROUPS[grp]:
-        h = db.get_macro_history(t, days=1825)
-        if h is not None and not h.empty:
-            fig_m.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(width=2)))
-            
-    fig_m.update_layout(
-        height=500, template="plotly_white",
-        xaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)'),
-        yaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)'),
-        margin=dict(l=70, r=40, t=80, b=60),
-        hovermode='x unified',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    st.plotly_chart(fig_m, use_container_width=True)
+    with macro_tabs[0]:
+        st.markdown("#### 실시간 시장 지표 (Daily)")
+        st.info("매일 변동하는 금리, 환율, 변동성 지표입니다. 단기적인 시장 심리와 수급을 파악하는 데 유용합니다.")
+        daily_tickers = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "DEXKOUS"]
+        
+        for t in daily_tickers:
+            h = db.get_macro_history(t, days=1000)
+            if h is not None and not h.empty:
+                with st.expander(f"📈 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="T10Y2Y")):
+                    st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#4f46e5", width=2)))
+                    fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
+                    st.plotly_chart(fig, use_container_width=True)
+
+    with macro_tabs[1]:
+        st.markdown("#### 주간 유동성 및 고용 지표 (Weekly)")
+        st.info("매주 발표되는 연준의 자산 현황과 고용 지표입니다. 중기적인 유동성 환경을 진단합니다.")
+        weekly_tickers = ["NET_LIQUIDITY", "WALCL_B", "TGA_B", "RRP_B", "ICSA"]
+        
+        for t in weekly_tickers:
+            h = db.get_macro_history(t, days=1500)
+            if h is not None and not h.empty:
+                with st.expander(f"📅 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="NET_LIQUIDITY")):
+                    st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#10b981", width=2)))
+                    fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
+                    st.plotly_chart(fig, use_container_width=True)
+
+    with macro_tabs[2]:
+        st.markdown("#### 월간 경제 및 물가 지표 (Monthly)")
+        st.info("국가의 펀더멘털을 결정하는 핵심 지표입니다. 장기적인 경기 방향성을 결정합니다.")
+        monthly_tickers = ["CPIAUCSL", "UNRATE", "BAMLH0A0HYM2"]
+        
+        for t in monthly_tickers:
+            h = db.get_macro_history(t, days=2500)
+            if h is not None and not h.empty:
+                with st.expander(f"📉 {TICKER_LABELS.get(t, t)} 상세보기", expanded=(t=="CPIAUCSL")):
+                    st.markdown(TICKER_DESCS.get(t, ""), unsafe_allow_html=True)
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=h.index, y=h['value'], name=TICKER_LABELS.get(t, t), line=dict(color="#ef4444", width=2)))
+                    fig.update_layout(height=300, margin=dict(l=40, r=40, t=20, b=40), template="plotly_white")
+                    st.plotly_chart(fig, use_container_width=True)
 
 # --- Footer ---
 st.markdown("---")
