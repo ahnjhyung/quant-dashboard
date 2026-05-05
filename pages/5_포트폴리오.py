@@ -626,22 +626,52 @@ else:
                         if ef:
                             ef_df = pd.DataFrame(ef)
                             fig_ef = go.Figure()
+                            
+                            # Efficient Frontier Line
                             fig_ef.add_trace(go.Scatter(
                                 x=ef_df["volatility"], y=ef_df["return"],
                                 mode="lines",
                                 name="효율적투자선",
                                 line=dict(color="#1f77b4", width=2),
                             ))
+
+                            # CML (Capital Market Line)
+                            cml_data = opt_result.get("cml", [])
+                            if cml_data:
+                                cml_df = pd.DataFrame(cml_data)
+                                fig_ef.add_trace(go.Scatter(
+                                    x=cml_df["volatility"], y=cml_df["return"],
+                                    mode="lines",
+                                    name="자본시장선 (CML)",
+                                    line=dict(color="rgba(0,0,0,0.3)", width=1, dash="dash"),
+                                ))
+
                             # 최적점 마커
                             fig_ef.add_trace(go.Scatter(
                                 x=[metrics["volatility"]], y=[metrics["expected_return"]],
                                 mode="markers+text",
                                 text=["최적점"],
                                 textposition="top center",
-                                marker=dict(size=8, color="#d62728", symbol="circle"),
+                                marker=dict(size=12, color="#d62728", symbol="star"),
                                 name="최적 포트폴리오",
-                                showlegend=False,
+                                showlegend=True,
                             ))
+
+                            # 커스텀 포트폴리오 분석 및 차트 추가
+                            for p_name, p_weights in active_ports.items():
+                                # 커스텀 포트폴리오 성능 분석
+                                custom_analysis = optimizer.analyze_custom_portfolio(p_weights, lookback_years=lookback)
+                                if "error" not in custom_analysis:
+                                    fig_ef.add_trace(go.Scatter(
+                                        x=[custom_analysis["volatility"]], y=[custom_analysis["expected_return"]],
+                                        mode="markers+text",
+                                        text=[p_name],
+                                        textposition="bottom center",
+                                        marker=dict(size=10, color="rgba(79, 70, 229, 0.8)", symbol="circle"),
+                                        name=f"커스텀: {p_name}",
+                                        hovertemplate=f"<b>{p_name}</b><br>수익률: {custom_analysis['expected_return']}%<br>변동성: {custom_analysis['volatility']}%<br>Sharpe: {custom_analysis['sharpe']}<extra></extra>"
+                                    ))
+
                             # 개별 자산 마커
                             for ast in opt_result.get("asset_stats", []):
                                 fig_ef.add_trace(go.Scatter(
@@ -650,19 +680,21 @@ else:
                                     text=[ast["ticker"]],
                                     textposition="top center",
                                     textfont=dict(size=10, color="#888"),
-                                    marker=dict(size=8, color="#999", opacity=0.6),
+                                    marker=dict(size=8, color="#999", opacity=0.4),
+                                    name=ast["ticker"],
                                     showlegend=False,
                                     hovertemplate=f"{ast['ticker']}<br>수익률: {ast['expected_return']:.1f}%<br>변동성: {ast['volatility']:.1f}%<extra></extra>",
                                 ))
                             fig_ef.update_layout(
-                                title="효율적투자선",
-                                height=400,
+                                title="효율적투자선 및 자본시장선(CML)",
+                                height=550,
                                 plot_bgcolor="#ffffff",
                                 paper_bgcolor="#ffffff",
                                 xaxis=dict(title="변동성 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
                                 yaxis=dict(title="기대수익률 (%)", gridcolor="#f0f0f0", linecolor="#ccc", tickfont=dict(color="#555")),
-                                font=dict(family="Noto Sans KR, Inter, sans-serif", color="#333"),
-                                margin=dict(l=70, r=40, t=80, b=60),
+                                font=dict(family="Pretendard, sans-serif", color="#333"),
+                                margin=dict(l=70, r=40, t=100, b=60),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                             )
                             st.plotly_chart(fig_ef, use_container_width=True)
 

@@ -296,7 +296,19 @@ class MacroOptimizer:
         # Step 6: Efficient Frontier 포인트 생성
         ef_points = self._generate_efficient_frontier(mu, cov, max_w, n_points=30)
 
-        # Step 7: 개별 자산 통계 (차트용)
+        # Step 7: Capital Market Line (CML) 포인트 생성
+        # CML: Ret = Rf + (Sharpe_Opt * Vol)
+        # 0부터 EF 최대 변동성의 1.2배까지 시뮬레이션
+        max_ef_vol = max([p["volatility"] for p in ef_points]) / 100.0 if ef_points else port_vol
+        cml_vols = np.linspace(0, max_ef_vol * 1.2, 20)
+        cml_points = []
+        for v in cml_vols:
+            cml_points.append({
+                "volatility": round(float(v) * 100, 2),
+                "return": round(float(self.rf + port_sharpe * v) * 100, 2)
+            })
+
+        # Step 8: 개별 자산 통계 (차트용)
         asset_stats = []
         for i, t in enumerate(available_tickers):
             asset_stats.append({
@@ -318,6 +330,36 @@ class MacroOptimizer:
             },
             "asset_stats": asset_stats,
             "efficient_frontier": ef_points,
+            "cml": cml_points,
+            "rf": round(self.rf * 100, 2)
+        }
+
+    def analyze_custom_portfolio(self, weights_dict: Dict[str, float], lookback_years: int = 5) -> Dict:
+        """커스텀 포트폴리오의 기대수익률, 변동성, 샤프지수를 분석한다."""
+        tickers = list(weights_dict.keys())
+        weights = np.array(list(weights_dict.values()))
+        
+        # 수익률 데이터 확보
+        returns_df = self._fetch_returns(tickers, lookback_years)
+        if returns_df.empty or returns_df.shape[1] < len(tickers):
+            return {"error": "일부 티커의 데이터를 가져올 수 없습니다."}
+            
+        # 기대수익률 & 공분산 (연율화)
+        mu = returns_df.mean().values * 252
+        cov = returns_df.cov().values * 252
+        
+        # 지표 계산
+        port_ret = float(weights @ mu)
+        port_vol = float(np.sqrt(weights @ cov @ weights))
+        port_sharpe = (port_ret - self.rf) / port_vol if port_vol > 0 else 0
+        ev = port_ret - self.rf
+        
+        return {
+            "expected_return": round(port_ret * 100, 2),
+            "volatility": round(port_vol * 100, 2),
+            "sharpe": round(port_sharpe, 3),
+            "ev": round(ev * 100, 2),
+            "weights": weights_dict
         }
 
     def _generate_efficient_frontier(
