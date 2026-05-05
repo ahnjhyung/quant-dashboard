@@ -148,7 +148,8 @@ class SupabaseManager:
         tickers = [
             "FEDFUNDS", "DGS2", "DGS10", "DEXKOUS", "VIXCLS", "T10Y2Y", "TEDRATE", 
             "STLFSI3", "UNRATE", "M2SL", "NFCI", "WTREGEN", "RRPONTSYD", "WALCL",
-            "BAMLH0A0HYM2EY", "BAMLH0A0HYM2", "CPALTT01USM657N", "PCEPI", "KR_BASE_RATE"
+            "BAMLH0A0HYM2EY", "BAMLH0A0HYM2", "CPALTT01USM657N", "PCEPI", "KR_BASE_RATE",
+            "NET_LIQUIDITY", "WALCL_B", "TGA_B", "RRP_B"
         ]
         
         result = {}

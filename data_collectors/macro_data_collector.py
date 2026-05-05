@@ -103,25 +103,42 @@ class MacroDataCollector:
         """
         Net Liquidity 산출 및 저장
         Formula: Fed Total Assets (WALCL) - TGA (WDTGAL) - Reverse Repo (RRPONTSYD)
+        Units: FRED data is in Millions (WALCL, WDTGAL) and Billions (RRP). 
+        Result will be stored in Billions (B) for easier UI display.
         """
         if not self.fred: return
-        print("[*] Calculating NET_LIQUIDITY...")
+        print("[*] Calculating NET_LIQUIDITY (Billions USD)...")
         try:
-            # 최신 유효 관측치 확보
-            walcl = self.fred.get_series('WALCL').dropna()
-            tga = self.fred.get_series('WDTGAL').dropna()
-            rrp = self.fred.get_series('RRPONTSYD').dropna()
+            # 최근 30일 데이터 확보하여 날짜 매칭
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)
             
-            if not walcl.empty and not tga.empty and not rrp.empty:
-                val_walcl = float(walcl.iloc[-1])
-                val_tga = float(tga.iloc[-1])
-                val_rrp = float(rrp.iloc[-1]) * 1000.0
+            walcl = self.fred.get_series('WALCL', observation_start=start_date).dropna()
+            tga = self.fred.get_series('WDTGAL', observation_start=start_date).dropna()
+            rrp = self.fred.get_series('RRPONTSYD', observation_start=start_date).dropna()
+            
+            # 데이터프레임으로 통합하여 날짜 맞춤
+            df = pd.DataFrame({'walcl': walcl, 'tga': tga, 'rrp': rrp})
+            df = df.fillna(method='ffill').dropna() # 이전 값으로 채우기 (발표 주기가 다름)
+            
+            if not df.empty:
+                latest = df.iloc[-1]
+                # WALCL(M), TGA(M), RRP(B) -> 모두 B(Billions)로 통일
+                # Net Liq (B) = (WALCL / 1000) - (TGA / 1000) - RRP
+                val_walcl_b = latest['walcl'] / 1000.0
+                val_tga_b = latest['tga'] / 1000.0
+                val_rrp_b = latest['rrp']
                 
-                net_liquidity = val_walcl - val_tga - val_rrp
-                date_str = walcl.index[-1].strftime("%Y-%m-%d")
+                net_liquidity_b = val_walcl_b - val_tga_b - val_rrp_b
+                date_str = df.index[-1].strftime("%Y-%m-%d")
                 
-                self.db.upsert_macro_indicator("NET_LIQUIDITY", date_str, net_liquidity)
-                print(f"    [OK] NET_LIQUIDITY ({date_str}): {net_liquidity:,.0f}M USD")
+                self.db.upsert_macro_indicator("NET_LIQUIDITY", date_str, float(net_liquidity_b))
+                print(f"    [OK] NET_LIQUIDITY ({date_str}): {net_liquidity_b:,.2f}B USD")
+                
+                # 원본 지표들도 B 단위로 저장 (UI 일관성)
+                self.db.upsert_macro_indicator("WALCL_B", date_str, float(val_walcl_b))
+                self.db.upsert_macro_indicator("TGA_B", date_str, float(val_tga_b))
+                self.db.upsert_macro_indicator("RRP_B", date_str, float(val_rrp_b))
         except Exception as e:
             print(f"    [ERROR] NET_LIQUIDITY 산출 실패: {e}")
 

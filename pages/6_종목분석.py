@@ -165,7 +165,20 @@ if mode == "마이크로 분석":
         st.info("분석할 종목 코드를 입력하고 '데이터 분석 시작' 버튼을 클릭해 주세요.")
     else:
         if run_btn:
-            ticker = ticker_input.strip().upper()
+            raw_ticker = ticker_input.strip().upper()
+            
+            # 한국 종목 자동 보정 (6자리 숫자일 경우)
+            if raw_ticker.isdigit() and len(raw_ticker) == 6:
+                # 기본적으로 KOSPI(.KS) 시도 후 데이터 없으면 KOSDAQ(.KQ) 시도
+                ticker = f"{raw_ticker}.KS"
+                with st.spinner(f"코스피 데이터 확인 중: {ticker}..."):
+                    test_df = swing_analyzer.get_ohlcv(ticker, period="1mo")
+                    if test_df.empty:
+                        ticker = f"{raw_ticker}.KQ"
+                        st.caption(f"코스피 데이터가 없어 코스닥({ticker})으로 전환합니다.")
+            else:
+                ticker = raw_ticker
+
             with st.spinner(f"금융 데이터 수집 및 알고리즘 분석 진행 중: {ticker}..."):
                 try:
                     fscore_data = value_analyzer.piotroski_score(ticker)
@@ -228,11 +241,13 @@ if mode == "마이크로 분석":
                 # 2. KEY METRICS GRID
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 
+                currency_symbol = "₩" if ticker.endswith((".KS", ".KQ")) else "$"
+                
                 with m_col1:
                     st.markdown(f"""
                     <div class="glass-card metric-box animate-fade">
                         <div class="metric-label">현재 주가</div>
-                        <div class="metric-value">${current_price:,.2f}</div>
+                        <div class="metric-value">{currency_symbol}{current_price:,.0f if currency_symbol == "₩" else ",.2f"}</div>
                         <div class="metric-delta" style='color:var(--text-muted)'>실시간 시세 데이터</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -404,7 +419,7 @@ if mode == "마이크로 분석":
                             </div>
                             """, unsafe_allow_html=True)
                     
-                    with t_col2:
+                with t_col2:
                         st.markdown("#### 추세 판단 및 리스크 관리 전략")
                         cross = swing_data.get('ma_cross', {})
                         rm = swing_data.get('risk_management', {})
@@ -413,13 +428,13 @@ if mode == "마이크로 분석":
                         st.markdown(f"""
                         <div class="glass-card">
                             <p style='margin-bottom:15px;'><b>현재 주가 추세:</b> <span style='color:var(--primary); font-weight:600;'>{trend_label}</span></p>
-                            <p style='margin-bottom:15px;'><b>200일 지수이동평균 (EMA):</b> ${cross.get('ema200', 0):,.2f} ({'주가 상회' if cross.get('price_above_ema200') else '주가 하회'})</p>
-                            <p style='margin-bottom:15px;'><b>변동성 지표 (ATR):</b> ${swing_data.get('atr', 0):,.2f}</p>
+                            <p style='margin-bottom:15px;'><b>200일 지수이동평균 (EMA):</b> {currency_symbol}{cross.get('ema200', 0):,.0f if currency_symbol == "₩" else ",.2f"} ({'주가 상회' if cross.get('price_above_ema200') else '주가 하회'})</p>
+                            <p style='margin-bottom:15px;'><b>변동성 지표 (ATR):</b> {currency_symbol}{swing_data.get('atr', 0):,.0f if currency_symbol == "₩" else ",.2f"}</p>
                             <hr style='border-color:var(--glass-border); margin:20px 0;'>
                             <p style='color:var(--primary); font-weight:700; margin-bottom:18px;'>포지션 진입 및 청산 가이드</p>
                             <div style='display:grid; grid-template-columns: 1fr 1fr; gap:24px;'>
-                                <div><small style='color:var(--text-muted); font-weight:600;'>진입 권장가</small><br><b style='font-size:1.15rem;'>${rm.get('target', 0):,.2f}</b></div>
-                                <div><small style='color:var(--text-muted); font-weight:600;'>리스크 손절가</small><br><b style='font-size:1.15rem; color:var(--danger);'>${rm.get('stop_loss', 0):,.2f}</b></div>
+                                <div><small style='color:var(--text-muted); font-weight:600;'>진입 권장가</small><br><b style='font-size:1.15rem;'>{currency_symbol}{rm.get('target', 0):,.0f if currency_symbol == "₩" else ",.2f"}</b></div>
+                                <div><small style='color:var(--text-muted); font-weight:600;'>리스크 손절가</small><br><b style='font-size:1.15rem; color:var(--danger);'>{currency_symbol}{rm.get('stop_loss', 0):,.0f if currency_symbol == "₩" else ",.2f"}</b></div>
                                 <div><small style='color:var(--text-muted); font-weight:600;'>손익비 (R/R)</small><br><b style='font-size:1.15rem;'>1 : {rm.get('risk_reward_ratio', 0):.1f}</b></div>
                                 <div><small style='color:var(--text-muted); font-weight:600;'>알고리즘 예상 승률</small><br><b style='font-size:1.15rem;'>{rm.get('win_probability', 0)*100:.1f}%</b></div>
                             </div>
@@ -433,36 +448,60 @@ elif mode == "매크로 분석":
         latest = db.get_latest_macro()
         
     if latest:
-        cols = st.columns(6)
-        display_map = [
-            ("DGS10", "미 국채 10년", "%"), ("T10Y2Y", "장단기 금리차", "%"),
-            ("VIXCLS", "VIX 변동성", ""), ("NET_LIQUIDITY", "미국 순유동성", "B"),
-            ("DEXKOUS", "원/달러 환율", "₩"), ("BAMLH0A0HYM2", "하이일드 스프레드", "%")
+        # 상단 핵심 지표 요약
+        cols = st.columns(4)
+        top_metrics = [
+            ("NET_LIQUIDITY", "미국 실질 순유동성", "B", "Fed 자산 - TGA - RRP. 시장의 가용 달러 규모."),
+            ("DEXKOUS", "원/달러 환율", "₩", "달러 대비 원화 가치. 외국인 수급의 핵심 지표."),
+            ("VIXCLS", "VIX 공포지수", "", "S&P 500 변동성 기대치. 20 이상 시 위험 회피 심리 강화."),
+            ("T10Y2Y", "장단기 금리차", "%", "10년물 - 2년물 금리. 마이너스(역전) 시 경기 침체 전조.")
         ]
-        for i, (key, label, unit) in enumerate(display_map):
+        
+        for i, (key, label, unit, desc) in enumerate(top_metrics):
             d = latest.get(key, {})
             val = d.get("current", 0)
             delta = val - d.get("prev", val)
             with cols[i]:
                 st.markdown(f"""
-                <div class="glass-card metric-box animate-fade">
+                <div class="glass-card metric-box animate-fade" title="{desc}">
                     <div class="metric-label">{label}</div>
                     <div class="metric-value" style='font-size:1.4rem;'>{val:,.2f}{unit}</div>
                     <div class="metric-delta" style='color:{"#10b981" if delta <=0 else "#ef4444"}; font-weight:600;'>{delta:+.2f}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
+        # 상세 유동성 지표 (TGA, RRP 등)
+        st.markdown("#### 유동성 세부 지표")
+        cols_liq = st.columns(3)
+        liq_metrics = [
+            ("WALCL_B", "연준 총자산 (Fed Assets)", "B", "연준이 보유한 채권 및 자산 규모 (양적완화/긴축)"),
+            ("TGA_B", "재무부 일반계정 (TGA)", "B", "정부의 현금 잔고. 지출 시 시장 유동성 증가."),
+            ("RRP_B", "역레포 잔고 (RRP)", "B", "시중의 유휴 자금. 감소 시 시장 유동성 공급 효과.")
+        ]
+        for i, (key, label, unit, desc) in enumerate(liq_metrics):
+            d = latest.get(key, {})
+            val = d.get("current", 0)
+            delta = val - d.get("prev", val)
+            with cols_liq[i]:
+                st.markdown(f"""
+                <div class="glass-card metric-box animate-fade" style='padding:15px;' title="{desc}">
+                    <div class="metric-label" style='font-size:0.75rem;'>{label}</div>
+                    <div class="metric-value" style='font-size:1.1rem;'>{val:,.2f}{unit}</div>
+                    <div class="metric-delta" style='font-size:0.8rem; color:{"#10b981" if delta <=0 else "#ef4444"};'>{delta:+.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
     # Historical Group Charts
     st.markdown("### 역사적 거시지표 추세 분석")
     MACRO_GROUPS = {
-        "통화량 및 중앙은행 자산 현황": ["M2SL", "WALCL", "NET_LIQUIDITY"],
+        "유동성 구성 요소 (Assets, TGA, RRP)": ["WALCL_B", "TGA_B", "RRP_B", "NET_LIQUIDITY"],
         "채권 금리 및 수익률 곡선": ["DGS2", "DGS10", "T10Y2Y", "T10Y3M"],
         "인플레이션 및 리스크 지표": ["CPIAUCSL", "VIXCLS", "BAMLH0A0HYM2"],
     }
     grp = st.selectbox("시각화 지표 그룹 선택", list(MACRO_GROUPS.keys()))
     
     TICKER_LABELS = {
-        "M2SL": "미국 통화량 (M2)", "WALCL": "연준 총자산", "NET_LIQUIDITY": "실질 유동성",
+        "WALCL_B": "연준 총자산(B)", "TGA_B": "재무부 잔고(TGA)", "RRP_B": "역레포(RRP)", "NET_LIQUIDITY": "실질 순유동성",
         "DGS2": "미 2년물 국채", "DGS10": "미 10년물 국채", "T10Y2Y": "금리차 (10Y-2Y)", "T10Y3M": "금리차 (10Y-3M)",
         "CPIAUCSL": "미국 CPI", "VIXCLS": "공포지수 (VIX)", "BAMLH0A0HYM2": "하이일드 스프레드"
     }

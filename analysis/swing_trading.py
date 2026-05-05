@@ -32,17 +32,26 @@ class SwingTradingAnalyzer:
     def get_ohlcv(self, ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
         """
         Yahoo Finance에서 OHLCV 데이터 다운로드
-        
-        Args:
-            ticker: 티커 ('AAPL', '005930.KS' 등)
-            period: '1mo', '3mo', '6mo', '1y', '2y', '5y'
-            interval: '1d', '1wk', '1mo'
         """
         try:
-            df = yf.download(ticker, period=period, interval=interval, progress=False)
+            stock = yf.Ticker(ticker)
+            df = stock.history(period=period, interval=interval)
+            
+            if df.empty:
+                # 한국 종목 등에서 history()가 가끔 빈 데이터 반환 시 download()로 재시도
+                df = yf.download(ticker, period=period, interval=interval, progress=False)
+
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            df = df.dropna()
+            
+            # 컬럼명 통일 (history는 Capitalized, download는 Capitalized)
+            # 드물게 소문자로 올 경우 대비
+            df.columns = [c.capitalize() for c in df.columns]
+            
+            if 'Close' not in df.columns and 'Adj close' in df.columns:
+                df['Close'] = df['Adj close']
+                
+            df = df.dropna(subset=['Close'])
             return df
         except Exception as e:
             print(f"❌ OHLCV 다운로드 실패 [{ticker}]: {e}")
