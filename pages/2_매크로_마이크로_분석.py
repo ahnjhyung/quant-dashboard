@@ -250,6 +250,13 @@ if mode == "매크로 분석":
     </div>
     """, unsafe_allow_html=True)
 
+    # FRED 무료 API 데이터 한계 안내
+    FRED_LIMITED_HISTORY = {
+        "BAMLH0A0HYM2": "2023-05",
+    }
+    if sel_key in FRED_LIMITED_HISTORY:
+        st.info(f"ℹ️ **데이터 출처 한계**: FRED 무료 API는 이 시리즈의 **{FRED_LIMITED_HISTORY[sel_key]} 이후 데이터**만 제공합니다. 전체 히스토리(1996~)는 Bloomberg/Refinitiv 등 유료 데이터 소스가 필요합니다.")
+
     with st.spinner(f"{sel_ind['name']} 차트 로딩 중..."):
         h = db.get_macro_history(sel_key, days=3000)
 
@@ -319,12 +326,18 @@ if mode == "매크로 분석":
                 annotation_font_size=12, annotation_font_color="#1e293b",
             )
 
+            # 실제 데이터가 있는 구간만 x축 범위로 설정 (빈 구간 방지)
+            x_min = plot_s.index.min()
+            x_max = plot_s.index.max()
             fig.update_layout(
                 height=420,
                 margin=dict(l=60, r=60, t=40, b=50),
                 template="plotly_white",
                 showlegend=False,
-                xaxis=dict(showgrid=True, gridcolor="#f1f5f9", title="날짜"),
+                xaxis=dict(
+                    showgrid=True, gridcolor="#f1f5f9", title="날짜",
+                    range=[x_min, x_max],   # 실제 데이터 범위만 표시
+                ),
                 yaxis=dict(showgrid=True, gridcolor="#f1f5f9", title=u),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
             )
