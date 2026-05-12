@@ -485,17 +485,26 @@ elif mode == "마이크로 분석":
         
         with tab1:
             st.markdown("#### 핵심 재무 지표 및 가치 평가")
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric(
+            row1_c1, row1_c2, row1_c3 = st.columns(3)
+            row1_c1.metric(
                 "Piotroski F-Score", 
                 f"{fv.get('piotroski_score',0)}/9", 
                 fv.get('fscore_category',''),
                 help="Piotroski F-Score는 기업의 재무 건전성을 9점 만점으로 평가하는 가치투자 지표입니다. 수익성, 레버리지/유동성, 효율성을 종합적으로 판단하며 7점 이상일 경우 우량 기업으로 분류됩니다."
             )
-            c2.metric("DCF 상승여력", f"{fv.get('upside_pct',0):.1f}%")
-            c3.metric("기댓값(EV)", f"{fv.get('expected_value_pct',0):.1f}%")
-            c4.metric("PER / PBR", f"{fv.get('per',0):.1f} / {fv.get('pbr',0):.1f}")
-            c5.metric("ROE", f"{fv.get('roe',0):.1f}%")
+            row1_c2.metric(
+                "DCF 상승여력", 
+                f"{fv.get('upside_pct',0):.1f}%",
+                help="DCF(현금흐름할인법)는 기업이 미래에 벌어들일 잉여현금흐름(FCF)을 현재 가치로 환산하여 내재가치를 구하는 모델입니다. 상승여력이 클수록 현재 주가가 내재가치 대비 저평가되어 있음을 의미합니다."
+            )
+            row1_c3.metric("가치투자 기댓값(EV)", f"{fv.get('expected_value_pct',0):.1f}%")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            row2_c1, row2_c2, row2_c3 = st.columns(3)
+            row2_c1.metric("PER (주가수익비율)", f"{fv.get('per',0):.2f}")
+            row2_c2.metric("PBR (주가순자산비율)", f"{fv.get('pbr',0):.2f}")
+            row2_c3.metric("ROE (자기자본이익률)", f"{fv.get('roe',0):.2f}%")
             
             st.markdown("##### DCF 기반 안전마진 산출")
             if fv.get('dcf_valid', False):
@@ -520,7 +529,7 @@ elif mode == "마이크로 분석":
             expected_rtn = risk.get('expected_value_pct',0)*100
             win_prob = risk.get('win_probability',0)*100
 
-            st.markdown("##### 💡 단기 트레이딩 매매 전략")
+            st.markdown("##### 단기 트레이딩 매매 전략")
             st.markdown(f"""
             <div style="display:flex; justify-content:space-between; background-color:#eef2ff; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #c7d2fe;">
                 <div style="text-align:center;">
@@ -559,6 +568,13 @@ elif mode == "마이크로 분석":
                 # 20일 이동평균선 추가
                 ma20 = df_chart['Close'].rolling(window=20).mean()
                 fig.add_trace(go.Scatter(x=df_chart.index, y=ma20, mode='lines', line=dict(color='blue', width=1), name='MA 20'))
+                
+                if entry > 0:
+                    fig.add_hline(y=entry, line_dash="dash", line_color="#4f46e5", annotation_text="추천 매수가", annotation_position="bottom right")
+                if target > 0:
+                    fig.add_hline(y=target, line_dash="dash", line_color="#16a34a", annotation_text="목표가", annotation_position="top right")
+                if stop_loss > 0:
+                    fig.add_hline(y=stop_loss, line_dash="dash", line_color="#dc2626", annotation_text="손절가", annotation_position="bottom right")
                 
                 fig.update_layout(
                     height=500,
