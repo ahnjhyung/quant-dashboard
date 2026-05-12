@@ -36,7 +36,8 @@ class MacroDataCollector:
                 # 3. Lagging / Stress Indicators (후행/스트레스지표)
                 'CPIAUCSL', 'PCEPI', 'T5YIE', 'REAINTRATREARAT10Y',           # Inflation / Real Rates
                 'NFCI', 'TEDRATE', 'BAMLH0A0HYM2', 'VIXCLS',                  # Stress / Risk
-                'TOTDTEUSQ163N', 'TDSP', 'BAMLH0A0HYM2EY', 'GS10'             # Debt / Yields
+                'TOTDTEUSQ163N', 'TDSP', 'BAMLH0A0HYM2EY', 'GS10',            # Debt / Yields
+                'SOFR',                                                         # SOFR 금리 (단기 기준금리)
             ],
             "YFINANCE": [
                 'BTC-USD', 'GC=F', 'CL=F', '^GSPC', '^IXIC', 'DX-Y.NYB',
