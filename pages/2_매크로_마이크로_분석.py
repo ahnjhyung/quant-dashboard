@@ -428,22 +428,114 @@ elif mode == "마이크로 분석":
 
         with st.spinner(f"분석 중: {ticker}"):
             try:
-                fscore = value_analyzer.piotroski_score(ticker)
-                dcf = value_analyzer.dcf_valuation(ticker)
+                import yfinance as yf
+                stock_info = yf.Ticker(ticker).info
                 fv = value_analyzer.full_value_analysis(ticker)
                 sw = swing_analyzer.full_analysis(ticker, period=sel_period)
-                st.session_state.update({'mi_ticker':ticker,'mi_fv':fv,'mi_sw':sw})
+                st.session_state.update({'mi_ticker':ticker,'mi_fv':fv,'mi_sw':sw, 'mi_info':stock_info})
             except Exception as e:
                 st.error(f"분석 오류: {e}")
 
     if 'mi_ticker' in st.session_state:
+        ticker = st.session_state['mi_ticker']
         fv = st.session_state['mi_fv']
         sw = st.session_state['mi_sw']
-        c1,c2,c3,c4 = st.columns(4)
-        c1.metric("Piotroski F-Score", f"{fv.get('piotroski_score',0)}/9")
-        c2.metric("DCF 상승여력", f"{fv.get('upside_pct',0):.1f}%")
-        c3.metric("기대값 (EV)", f"{fv.get('expected_value_pct',0):.1f}%")
-        c4.metric("스윙 신호", sw.get('signal','N/A'))
+        info = st.session_state['mi_info']
+        
+        comp_name = info.get('longName', info.get('shortName', ticker))
+        current_price = sw.get('current_price', info.get('currentPrice', 0))
+        beta = info.get('beta', 'N/A')
+        if isinstance(beta, float):
+            beta_str = f"{beta:.2f}"
+            risk_level = "고위험 (고변동성)" if beta > 1.2 else "저위험 (안정적)" if beta < 0.8 else "시장평균 (보통)"
+        else:
+            beta_str = "N/A"
+            risk_level = "알 수 없음"
+
+        st.markdown(f"### {comp_name} ({ticker})")
+        st.markdown(f"**현재가:** {current_price:,.2f} | **베타(Beta):** {beta_str} ({risk_level})")
+        
+        # 통합 컨센서스 섹션
+        st.markdown("#### 종합 투자 컨센서스")
+        val_ev = fv.get('expected_value_pct', 0)
+        swing_sig = sw.get('swing_signal', 'HOLD')
+        swing_ev = sw.get('risk_management', {}).get('expected_value_pct', 0)
+        
+        if val_ev > 0 and swing_sig in ['BUY', 'STRONG_BUY'] and swing_ev > 0:
+            overall_consensus = "강력 매수 (Strong Buy)"
+            cons_color = "#16a34a"
+            cons_desc = "기본적 분석(내재가치 저평가)과 기술적 분석(상승 모멘텀) 모두 매수 신호를 나타냅니다. 기대값(EV)이 양수입니다."
+        elif (val_ev > 0) ^ (swing_sig in ['BUY', 'STRONG_BUY'] and swing_ev > 0):
+            overall_consensus = "관망 / 분할 매수 (Hold / Accumulate)"
+            cons_color = "#ca8a04"
+            cons_desc = "가치 지표와 기술적 지표 간 혼조세가 있습니다. 단기 변동성에 주의하며 분할 접근이 필요합니다."
+        else:
+            overall_consensus = "매도 / 관망 (Sell / Watch)"
+            cons_color = "#dc2626"
+            cons_desc = "고평가 혹은 뚜렷한 하락 추세입니다. 신규 진입을 자제하십시오."
+            
+        st.markdown(f'''
+        <div style="padding:15px; border-radius:8px; border-left: 5px solid {cons_color}; background-color: #f8fafc; margin-bottom:20px;">
+            <strong style="color: {cons_color}; font-size: 1.1em;">{overall_consensus}</strong><br>
+            <span style="color: #475569; font-size: 0.95em;">{cons_desc}</span>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+        tab1, tab2 = st.tabs(["기본적 분석 (Fundamental)", "기술적 분석 (Technical)"])
+        
+        with tab1:
+            st.markdown("#### 핵심 재무 지표 및 가치 평가")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Piotroski F-Score", f"{fv.get('piotroski_score',0)}/9", fv.get('fscore_category',''))
+            c2.metric("DCF 상승여력", f"{fv.get('upside_pct',0):.1f}%")
+            c3.metric("가치투자 기댓값(EV)", f"{fv.get('expected_value_pct',0):.1f}%")
+            c4.metric("PER / PBR", f"{fv.get('per',0):.1f} / {fv.get('pbr',0):.1f}")
+            
+            st.markdown("##### DCF 기반 안전마진 산출")
+            if fv.get('dcf_valid', False):
+                st.success(f"DCF 모델 산출 결과, 적정 가치 대비 현재 가격의 안전 마진은 **{fv.get('margin_of_safety',0)*100:.1f}%** 입니다.")
+            else:
+                st.warning("DCF 분석을 위한 잉여현금흐름(FCF) 데이터가 부족하여 산출되지 않았습니다.")
+
+        with tab2:
+            st.markdown("#### 스윙 트레이딩 및 차트 분석")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("스윙 신호", sw.get('swing_signal','N/A'))
+            c2.metric("RSI (14)", f"{sw.get('rsi',{{}}).get('value',0):.1f}")
+            macd_val = sw.get('macd',{}).get('histogram',0)
+            c3.metric("MACD 히스토그램", f"{macd_val:.3f}")
+            bb_pct = sw.get('bollinger',{}).get('pct_b',0)
+            c4.metric("볼린저 밴드 %B", f"{bb_pct:.2f}")
+
+            risk = sw.get('risk_management', {})
+            st.markdown(f"**진입가:** {risk.get('entry',0):,} | **손절가:** {risk.get('stop_loss',0):,} | **목표가:** {risk.get('target',0):,}")
+            st.markdown(f"**단기 트레이딩 기댓값(EV):** {risk.get('expected_value_pct',0)*100:.2f}% | **승률 추정치:** {risk.get('win_probability',0)*100:.1f}%")
+
+            df_chart = sw.get('ohlcv')
+            if df_chart is not None and not df_chart.empty:
+                st.markdown("##### 캔들스틱 및 이동평균 차트")
+                fig = go.Figure()
+                fig.add_trace(go.Candlestick(
+                    x=df_chart.index,
+                    open=df_chart['Open'],
+                    high=df_chart['High'],
+                    low=df_chart['Low'],
+                    close=df_chart['Close'],
+                    name='Price'
+                ))
+                
+                # 20일 이동평균선 추가
+                ma20 = df_chart['Close'].rolling(window=20).mean()
+                fig.add_trace(go.Scatter(x=df_chart.index, y=ma20, mode='lines', line=dict(color='blue', width=1), name='MA 20'))
+                
+                fig.update_layout(
+                    height=500,
+                    margin=dict(l=40, r=40, t=30, b=30),
+                    template="plotly_white",
+                    xaxis_rangeslider_visible=False,
+                    yaxis_title="Price"
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
 st.caption("Quant Investment Program v4.5 | EV-Based Systematic Investment")
