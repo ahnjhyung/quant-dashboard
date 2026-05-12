@@ -299,7 +299,7 @@ if mode == "매크로 분석":
                 line=dict(color=sel_ind["color"], width=2),
                 fill='tozeroy',
                 fillcolor='rgba(79,70,229,0.06)',
-                connectgaps=True,
+                connectgaps=False,   # 데이터 공백은 실제 공백으로 표시 (가짜 직선 방지)
                 name=sel_ind["name"]
             ))
 

@@ -139,7 +139,8 @@ class SupabaseManager:
 
     def get_latest_macro(self) -> Dict[str, Dict]:
         """
-        주요 거시경제 지표들의 최신값/이전값/날짜를 단일 IN 쿼리로 반환합니다.
+        주요 거시경제 지표들의 최신값/이전값/날짜를 반환합니다.
+        - 최근 90일 기간으로 필터링하여 월간 지표(CPI, 실업률)도 확실히 포함
         반환 형식: {ticker: {"current": val, "prev": val, "date": str}}
         """
         if not self.client:
@@ -152,18 +153,23 @@ class SupabaseManager:
             "NET_LIQUIDITY", "WALCL", "WDTGAL", "RRPONTSYD",
             "CPIAUCSL", "PCEPI", "UNRATE", "ICSA",
             "TEDRATE", "STLFSI3", "M2SL", "NFCI",
-            "WTREGEN", "WALCL", "KR_BASE_RATE", "RRP_B",
+            "WTREGEN", "KR_BASE_RATE",
         ]
 
         result = {}
         try:
             from collections import defaultdict
-            # 단일 IN 쿼리로 한 번에 조회 (N+1 → 1 쿼리)
+            from datetime import datetime, timedelta
+
+            # 최근 90일 기간 필터: 월간 지표(CPI, UNRATE 등)도 확실히 커버
+            since = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+
             response = self.client.table("macro_indicators")\
                 .select("ticker, date, value")\
                 .in_("ticker", tickers)\
+                .gte("date", since)\
                 .order("date", desc=True)\
-                .limit(len(tickers) * 5)\
+                .limit(5000)\
                 .execute()
 
             ticker_rows: Dict[str, list] = defaultdict(list)
@@ -189,6 +195,7 @@ class SupabaseManager:
         except Exception as e:
             print(f"[ERROR] [SupabaseManager] get_latest_macro 에러: {e}")
             return {}
+
 
     def get_regime_risk_score(self) -> int:
         """quant_engine이 news_sentiment에 남긴 RAG_CONTEXT의 sentiment_score (Regime Risk Score) 조회"""
