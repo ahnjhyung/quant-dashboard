@@ -161,16 +161,15 @@ class SupabaseManager:
             from collections import defaultdict
             from datetime import datetime, timedelta
 
-            # 최근 90일 기간 필터: 월간 지표(CPI, UNRATE 등)도 확실히 커버
-            since = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+            # 최근 180일 기간 필터: 월간/분기 지표도 확실히 커버
+            since = (datetime.utcnow() - timedelta(days=180)).strftime("%Y-%m-%d")
 
             response = self.client.table("macro_indicators")\
                 .select("ticker, date, value")\
                 .in_("ticker", tickers)\
                 .gte("date", since)\
                 .order("date", desc=True)\
-                .limit(5000)\
-                .execute()
+                .execute() # limit 제거하여 모든 ticker가 포함되도록 함
 
             ticker_rows: Dict[str, list] = defaultdict(list)
             for row in response.data:

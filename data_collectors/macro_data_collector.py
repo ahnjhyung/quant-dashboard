@@ -57,7 +57,10 @@ class MacroDataCollector:
             try:
                 print(f"[*] Collecting FRED: {ticker}...")
                 # 최근 'days' 기간의 데이터를 가져옴
-                series = self.fred.get_series(ticker, observation_start=start_date)
+                if ticker in ['CPIAUCSL', 'PCEPI']:
+                    series = self.fred.get_series(ticker, observation_start=start_date, units='pc1')
+                else:
+                    series = self.fred.get_series(ticker, observation_start=start_date)
                 if series is not None and not series.empty:
                     count = 0
                     for date, value in series.items():
@@ -119,7 +122,7 @@ class MacroDataCollector:
             # 주간 지표인 WALCL 기준으로 인덱스 생성
             df = pd.DataFrame({'walcl': walcl, 'tga': tga, 'rrp': rrp})
             # ffill로 다른 지표들의 최신값을 매칭시키되, 인덱스는 원본 날짜 유지
-            df = df.fillna(method='ffill').dropna()
+            df = df.ffill().dropna()
             
             count = 0
             for date, row in df.iterrows():
@@ -145,11 +148,71 @@ class MacroDataCollector:
         except Exception as e:
             print(f"    [ERROR] NET_LIQUIDITY 계산 실패: {e}")
 
+    def collect_tvdatafeed_data(self):
+        """TradingView 실시간 지표 수집 및 적재 (FRED의 지연 보완)"""
+        try:
+            from tvDatafeed import TvDatafeed, Interval
+            tv = TvDatafeed()
+            
+            # (ticker, exchange, db_ticker)
+            tv_tickers = [
+                ('US02Y', 'TVC', 'DGS2'),
+                ('US10Y', 'TVC', 'DGS10'),
+                ('US30Y', 'TVC', 'DGS30'),
+                ('VIX', 'CBOE', 'VIXCLS'),
+                ('USDKRW', 'FX_IDC', 'DEXKOUS'),
+            ]
+            
+            # 실시간 금리차(T10Y2Y) 계산용 저장소
+            latest_yields = {}
+            
+            for symbol, exchange, db_ticker in tv_tickers:
+                print(f"[*] Collecting TradingView: {symbol} ({db_ticker})...")
+                # 당일 포함 최근 3일 데이터 가져오기
+                df = tv.get_hist(symbol=symbol, exchange=exchange, interval=Interval.in_daily, n_bars=3)
+                if df is not None and not df.empty:
+                    count = 0
+                    for date, row in df.iterrows():
+                        date_str = date.strftime("%Y-%m-%d")
+                        val = float(row['close'])
+                        
+                        # 당일 데이터 갱신을 위해 존재하는지 체크하고, 존재하더라도 오늘 날짜면 덮어쓰기!
+                        today_str = datetime.now().strftime("%Y-%m-%d")
+                        if not self.db.check_macro_exists(db_ticker, date_str):
+                            self.db.upsert_macro_indicator(db_ticker, date_str, val)
+                            count += 1
+                        elif date_str == today_str:
+                            self.db.upsert_macro_indicator(db_ticker, date_str, val)
+                            count += 1
+                            
+                        # 당일 값을 T10Y2Y 계산용으로 저장
+                        if date_str == today_str:
+                            latest_yields[db_ticker] = val
+                            
+                    if count > 0:
+                        print(f"    [OK] TradingView {symbol}: {count} points updated.")
+                    else:
+                        print(f"    [SKIP] TradingView {symbol}: No new updates.")
+                time.sleep(0.5)
+                
+            # 실시간 T10Y2Y 업데이트
+            if 'DGS10' in latest_yields and 'DGS2' in latest_yields:
+                spread = latest_yields['DGS10'] - latest_yields['DGS2']
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                self.db.upsert_macro_indicator('T10Y2Y', today_str, spread)
+                print(f"    [OK] TradingView T10Y2Y Spread Updated: {spread:.3f}")
+                
+        except ImportError:
+            print("[ERROR] tvDatafeed module not installed. Run: pip install git+https://github.com/rongardF/tvdatafeed.git")
+        except Exception as e:
+            print(f"[ERROR] TradingView collection failed: {e}")
+
     def run_all(self):
         print(f"=== [Unified] 매크로 데이터 통합 수집 시작 ({datetime.now()}) ===")
         self.collect_fred_data()
         self.collect_yfinance_data()
         self.calculate_and_save_net_liquidity()
+        self.collect_tvdatafeed_data()
         print("=== 매크로 데이터 통합 수집 완료 ===")
 
 if __name__ == "__main__":

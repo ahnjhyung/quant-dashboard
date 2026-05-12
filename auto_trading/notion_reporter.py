@@ -6,6 +6,7 @@ Supabase의 퀀트 분석 결과와 매크로 지표를 읽어서
 """
 
 import os
+import sys
 from datetime import datetime
 from notion_client import Client
 from config import NOTION_API_KEY, NOTION_PARENT_PAGE_ID, NOTION_DATABASE_ID
@@ -15,9 +16,15 @@ from analysis.event_swing import EventSwingAnalyzer
 from analysis.value_investing import ValueInvestingAnalyzer
 from analysis.short_squeeze import ShortSqueezeAnalyzer
 from analysis.derivatives import DerivativesAnalyzer
+from analysis.macro_consensus import MacroConsensusEngine
 
 class NotionReporter:
     def __init__(self):
+        if sys.platform == "win32":
+            try:
+                sys.stdout.reconfigure(encoding='utf-8')
+            except:
+                pass
         if not NOTION_API_KEY:
             self.client = None
             print("[WARN] [NotionReporter] NOTION_API_KEY가 설정되지 않아 비활성화됩니다.")
@@ -148,6 +155,7 @@ class NotionReporter:
         value_analyzer = ValueInvestingAnalyzer()
         squeeze_analyzer = ShortSqueezeAnalyzer()
         deriv_analyzer = DerivativesAnalyzer()
+        consensus_engine = MacroConsensusEngine()
         
         # 1. 관심 페어 분석
         pair_results = []
@@ -177,6 +185,13 @@ class NotionReporter:
             complex_results.append({"type": "DERIVATIVES", "res": deriv_analyzer.vix_analysis()})
         except Exception as e:
             print(f"[WARN] 복합 분석 런타임 오류: {e}")
+
+        # 4. 매크로 컨센서스 분석
+        consensus_res = None
+        try:
+            consensus_res = consensus_engine.analyze_macro_consensus()
+        except Exception as e:
+            print(f"[WARN] 매크로 컨센서스 분석 오류: {e}")
 
         # 데이터 파싱 헬퍼 함수
         def get_macro(ticker, is_prev=False):
@@ -264,6 +279,43 @@ class NotionReporter:
             }
         })
         blocks.append({"object": "block", "type": "divider", "divider": {}})
+
+        # [매크로 컨센서스 섹션]
+        if consensus_res:
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {"rich_text": [{"type": "text", "text": {"content": "🎯 실시간 매크로 투자 컨센서스"}}] }
+            })
+            
+            score = consensus_res['score']
+            opinion = consensus_res['consensus']
+            action = consensus_res['action_plan']
+            
+            blocks.append({
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": f"컨센서스 점수: {score}/100\n"}, "annotations": {"bold": True}},
+                        {"type": "text", "text": {"content": f"투자 의견: {opinion}\n"}, "annotations": {"bold": True, "color": "blue" if score > 0 else "red"}},
+                        {"type": "text", "text": {"content": f"대응 전략: {action}"}}
+                    ],
+                    "icon": {"emoji": "🚀" if score >= 40 else "📈" if score >= 10 else "⚖️" if score >= -15 else "📉" if score >= -40 else "🆘"},
+                    "color": "blue_background" if score >= 10 else "yellow_background" if score >= -15 else "red_background"
+                }
+            })
+            
+            # 상세 근거 리스트
+            for detail in consensus_res['details']:
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": detail}}]
+                    }
+                })
+            blocks.append({"object": "block", "type": "divider", "divider": {}})
 
         # 섹션 1: 주요 자산 동향
         blocks.append({

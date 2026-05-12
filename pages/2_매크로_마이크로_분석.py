@@ -2,6 +2,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from data_collectors.supabase_manager import SupabaseManager
+from analysis.macro_consensus import MacroConsensusEngine
 
 st.set_page_config(
     page_title="Macro / Micro Analysis | Quant Investment Program",
@@ -150,7 +152,7 @@ ALLOW_NEGATIVE = {"T10Y2Y", "T10Y3M", "NET_LIQUIDITY", "NFCI", "BAMLH0A0HYM2"}
 UNIT_DIVIDERS = {
     "WALCL":        (1_000, "$B"),   # M$ → B$ (7,100,000M → 7,100 $B ≈ $7.1T)
     "WDTGAL":       (1_000, "$B"),   # M$ → B$ (700,000M  → 700 $B ≈ $0.7T)
-    "NET_LIQUIDITY":(1_000, "$B"),   # M$ → B$ (6,300,000M → 6,300 $B ≈ $6.3T)
+    "NET_LIQUIDITY":(1, "$B"),       # 이미 B$ 단위로 저장됨
     "ICSA":         (10_000, "만 건"),
 }
 
@@ -170,6 +172,33 @@ if mode == "매크로 분석":
     # 데이터 한 번에 로드
     with st.spinner("매크로 데이터 로딩 중..."):
         latest = db.get_latest_macro() or {}
+        
+    # --- 매크로 컨센서스 분석 결과 ---
+    consensus_engine = MacroConsensusEngine()
+    consensus_res = consensus_engine.analyze_macro_consensus()
+    score = consensus_res['score']
+    c_color = consensus_res['color']
+    
+    st.markdown(f"""
+    <div style="background: white; border-radius: 16px; padding: 24px; margin-bottom: 30px; border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
+        <h3 style="margin-top: 0; color: #1e293b; font-weight: 700; margin-bottom: 20px;">매크로 투자 컨센서스 (AI)</h3>
+        <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 0 0 auto; text-align: center; padding: 20px 30px; background: {c_color}15; border-radius: 12px; border: 1px solid {c_color}30;">
+                <div style="font-size: 14px; font-weight: 600; color: {c_color}; margin-bottom: 4px;">Score</div>
+                <div style="font-size: 36px; font-weight: 800; color: {c_color}; line-height: 1;">{score}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">-100 ~ +100</div>
+            </div>
+            <div style="flex: 1 1 300px;">
+                <div style="font-size: 24px; font-weight: 800; color: {c_color}; margin-bottom: 8px;">{consensus_res['consensus']}</div>
+                <div style="font-size: 16px; color: #334155; line-height: 1.5; font-weight: 500;">{consensus_res['action_plan']}</div>
+            </div>
+            <div style="flex: 1 1 300px; background: #f8fafc; padding: 16px; border-radius: 12px; font-size: 13px; color: #475569; line-height: 1.6;">
+                <strong style="color: #1e293b;">주요 판단 근거:</strong><br>
+                {'<br>'.join(consensus_res['details'])}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── 블록 그리드 (HTML 카드 only, 버튼 없음) ──
     st.markdown("### 주요 거시경제 지표")
@@ -255,7 +284,7 @@ if mode == "매크로 분석":
         "BAMLH0A0HYM2": "2023-05",
     }
     if sel_key in FRED_LIMITED_HISTORY:
-        st.info(f"ℹ️ **데이터 출처 한계**: FRED 무료 API는 이 시리즈의 **{FRED_LIMITED_HISTORY[sel_key]} 이후 데이터**만 제공합니다. 전체 히스토리(1996~)는 Bloomberg/Refinitiv 등 유료 데이터 소스가 필요합니다.")
+        st.info(f"[안내] **데이터 출처 한계**: FRED 무료 API는 이 시리즈의 **{FRED_LIMITED_HISTORY[sel_key]} 이후 데이터**만 제공합니다. 전체 히스토리(1996~)는 Bloomberg/Refinitiv 등 유료 데이터 소스가 필요합니다.")
 
     with st.spinner(f"{sel_ind['name']} 차트 로딩 중..."):
         h = db.get_macro_history(sel_key, days=3000)
@@ -284,14 +313,7 @@ if mode == "매크로 분석":
                 cur_label = f"{current_val:,.2f}{u}"
                 def fmt(v): return f"{v:,.2f}{u}"
 
-            # 리샘플 (일별 데이터가 많을 때 주간 집계로 가독성 개선)
-            freq_rs = sel_ind["freq"]
-            if freq_rs == "Daily" and len(plot_values) > 400:
-                plot_s = plot_values.resample("W").last().dropna()
-            elif freq_rs == "Weekly" and len(plot_values) > 300:
-                plot_s = plot_values.resample("W").last().dropna()
-            else:
-                plot_s = plot_values
+            plot_s = plot_values
 
             # 임계값도 동일하게 나눔
             thresholds_adj = [
@@ -300,15 +322,43 @@ if mode == "매크로 분석":
             ]
 
             fig = go.Figure()
+            
+            # 음수가 가능한 지표는 채우기 효과 제거
+            fill_type = 'none' if sel_key in ALLOW_NEGATIVE else 'tozeroy'
+            
             fig.add_trace(go.Scatter(
                 x=plot_s.index, y=plot_s.values,
                 mode='lines',
                 line=dict(color=sel_ind["color"], width=2),
-                fill='tozeroy',
-                fillcolor='rgba(79,70,229,0.06)',
-                connectgaps=False,   # 데이터 공백은 실제 공백으로 표시 (가짜 직선 방지)
+                fill=fill_type,
+                fillcolor='rgba(79,70,229,0.06)' if fill_type == 'tozeroy' else None,
+                connectgaps=True, # 끊긴 차트 연결
                 name=sel_ind["name"]
             ))
+
+            # ICSA(실업수당 청구)의 경우 변동성이 크므로 Bar + 4주 이동평균선
+            if sel_key == "ICSA":
+                fig.data = [] # 기존 Scatter 제거
+                # 단위를 '만 건'으로 조정 (기본 데이터가 건수이므로 10,000으로 나눔)
+                icsa_scaled = plot_s / 10000.0
+                fig.add_trace(go.Bar(
+                    x=icsa_scaled.index, y=icsa_scaled.values,
+                    name="주간 신규 (만 건)",
+                    marker_color='rgba(168, 85, 247, 0.3)',
+                    hovertemplate="%{x|%Y-%m-%d}: %{y:,.1f}만 건<extra></extra>"
+                ))
+                sma4 = icsa_scaled.rolling(window=4).mean()
+                fig.add_trace(go.Scatter(
+                    x=sma4.index, y=sma4.values,
+                    mode='lines',
+                    line=dict(color="#ef4444", width=3),
+                    name="4주 이동평균 (만 건)",
+                    connectgaps=True
+                ))
+            
+            # 하이일드 스프레드의 경우 변동성이 크므로 연결 강화
+            if sel_key == "BAMLH0A0HYM2":
+                fig.update_traces(line=dict(width=3))
 
             for th in thresholds_adj:
                 fig.add_hline(
