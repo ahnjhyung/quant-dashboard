@@ -76,13 +76,23 @@ from analysis.swing_trading import SwingTradingAnalyzer
 
 db = SupabaseManager()
 
+@st.cache_data(ttl=86400)
+def get_krx_stocks():
+    try:
+        import FinanceDataReader as fdr
+        df = fdr.StockListing('KRX')
+        return dict(zip(df['Name'], df['Code']))
+    except:
+        return {}
+
 # ── Sidebar ──────────────────────────────────
 with st.sidebar:
     st.markdown("<h2 style='margin-top:0;color:#1e293b;font-weight:800;'>Quant Investment Program</h2>", unsafe_allow_html=True)
     mode = st.radio("분석 모드", ["매크로 분석", "마이크로 분석"], index=0)
     st.markdown("---")
+    krx_dict = get_krx_stocks() if mode == "마이크로 분석" else {}
     if mode == "마이크로 분석":
-        ticker_input = st.text_input("종목 코드", "NVDA", help="예: TSLA, AAPL, 005930.KS")
+        ticker_input = st.text_input("종목명 또는 종목 코드", "삼성전자", help="예: 삼성전자, 카카오, TSLA, AAPL, 005930")
         period = st.selectbox("분석 범위", ["6개월","1년","2년","5년"], index=1)
         period_map = {"6개월":"6mo","1년":"1y","2년":"2y","5년":"5y"}
         sel_period = period_map[period]
@@ -414,9 +424,15 @@ elif mode == "마이크로 분석":
     st.markdown("<h2 style='color:#1e293b;font-weight:800;'>Micro Analysis</h2>", unsafe_allow_html=True)
 
     if not ticker_input:
-        st.info("사이드바에서 종목 코드를 입력하고 '분석 시작' 버튼을 클릭해 주세요.")
+        st.info("사이드바에서 종목명 또는 코드를 입력하고 '분석 시작' 버튼을 클릭해 주세요.")
     elif run_btn:
-        raw = ticker_input.strip().upper()
+        raw = ticker_input.strip()
+        # 종목명 검색 지원
+        if raw in krx_dict:
+            raw = krx_dict[raw]
+        else:
+            raw = raw.upper()
+            
         if raw.isdigit() and len(raw) == 6:
             ticker = f"{raw}.KS"
             with st.spinner(f"코스피 확인 중: {ticker}"):
