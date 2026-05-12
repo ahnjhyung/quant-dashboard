@@ -501,7 +501,7 @@ elif mode == "마이크로 분석":
             st.markdown("#### 스윙 트레이딩 및 차트 분석")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("스윙 신호", sw.get('swing_signal','N/A'))
-            c2.metric("RSI (14)", f"{sw.get('rsi',{{}}).get('value',0):.1f}")
+            c2.metric("RSI (14)", f"{sw.get('rsi', dict()).get('value',0):.1f}")
             macd_val = sw.get('macd',{}).get('histogram',0)
             c3.metric("MACD 히스토그램", f"{macd_val:.3f}")
             bb_pct = sw.get('bollinger',{}).get('pct_b',0)
