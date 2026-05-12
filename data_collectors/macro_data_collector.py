@@ -22,7 +22,7 @@ class MacroDataCollector:
         self.indicators = {
             "FRED": [
                 # 1. Leading Indicators (선행지표)
-                'T10Y3M', 'T10Y2Y', 'DGS2', 'DGS10',                          # Interest Rates / Yield Curve
+                'T10Y3M', 'T10Y2Y', 'DGS2', 'DGS10', 'DGS30',                   # Interest Rates / Yield Curve
                 'PERMIT', 'AWHAETP', 'UMCSENT', 'AMTMNO', 'DGORDER',          # Real Economy / Sentiment
                 'ICSA', 'NAPM', 'CSCICP03USM665S',                            # Jobless Claims / ISM PMI / OECD CCI
                 'NEWORDER', 'BUSLOANS',                                       # Demand / Credit

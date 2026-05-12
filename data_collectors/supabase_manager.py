@@ -137,39 +137,54 @@ class SupabaseManager:
             print(f"[ERROR] [SupabaseManager] get_latest_rag_insight 에러: {e}")
             return ""
 
-    def get_latest_macro(self) -> Dict[str, Dict[str, float]]:
+    def get_latest_macro(self) -> Dict[str, Dict]:
         """
-        주요 거시경제 지표들의 최신값과 이전계값을 가져와 딕셔너리로 반환합니다.
-        notion_reporter.py 에서 기대하는 형식: {ticker: {"current": val, "prev": val}}
+        주요 거시경제 지표들의 최신값/이전값/날짜를 단일 IN 쿼리로 반환합니다.
+        반환 형식: {ticker: {"current": val, "prev": val, "date": str}}
         """
         if not self.client:
             return {}
-            
+
         tickers = [
-            "FEDFUNDS", "DGS2", "DGS10", "DEXKOUS", "VIXCLS", "T10Y2Y", "TEDRATE", 
-            "STLFSI3", "UNRATE", "M2SL", "NFCI", "WTREGEN", "RRPONTSYD", "WALCL",
-            "BAMLH0A0HYM2EY", "BAMLH0A0HYM2", "CPALTT01USM657N", "PCEPI", "KR_BASE_RATE",
-            "NET_LIQUIDITY", "WALCL_B", "TGA_B", "RRP_B"
+            "FEDFUNDS", "DGS2", "DGS10", "DGS30", "T10Y2Y",
+            "SOFR", "DEXKOUS", "VIXCLS",
+            "BAMLH0A0HYM2", "BAMLH0A0HYM2EY",
+            "NET_LIQUIDITY", "WALCL_B", "TGA_B", "RRPONTSYD",
+            "CPIAUCSL", "PCEPI", "UNRATE", "ICSA",
+            "TEDRATE", "STLFSI3", "M2SL", "NFCI",
+            "WTREGEN", "WALCL", "KR_BASE_RATE", "RRP_B",
         ]
-        
+
         result = {}
         try:
+            from collections import defaultdict
+            # 단일 IN 쿼리로 한 번에 조회 (N+1 → 1 쿼리)
+            response = self.client.table("macro_indicators")\
+                .select("ticker, date, value")\
+                .in_("ticker", tickers)\
+                .order("date", desc=True)\
+                .limit(len(tickers) * 5)\
+                .execute()
+
+            ticker_rows: Dict[str, list] = defaultdict(list)
+            for row in response.data:
+                t = row['ticker']
+                if len(ticker_rows[t]) < 2:
+                    ticker_rows[t].append(row)
+
             for ticker in tickers:
-                # 최신 2개 값 가져오기
-                response = self.client.table("macro_indicators")\
-                    .select("value, date")\
-                    .eq("ticker", ticker)\
-                    .order("date", desc=True)\
-                    .limit(2)\
-                    .execute()
-                
-                if response.data:
-                    current = float(response.data[0]['value'])
-                    prev = float(response.data[1]['value']) if len(response.data) > 1 else current
-                    result[ticker] = {"current": current, "prev": prev}
+                rows = ticker_rows.get(ticker, [])
+                if rows:
+                    current = float(rows[0]['value'])
+                    prev = float(rows[1]['value']) if len(rows) > 1 else current
+                    result[ticker] = {
+                        "current": current,
+                        "prev": prev,
+                        "date": rows[0].get('date', 'N/A')
+                    }
                 else:
-                    result[ticker] = {"current": 0.0, "prev": 0.0}
-                    
+                    result[ticker] = {"current": None, "prev": None, "date": "N/A"}
+
             return result
         except Exception as e:
             print(f"[ERROR] [SupabaseManager] get_latest_macro 에러: {e}")
@@ -200,8 +215,8 @@ class SupabaseManager:
             
         import pandas as pd
         try:
-            # 백테스트를 위해 충분한 양(최대 2000일)을 한 번에 가져와 캐싱
-            fetch_limit = max(days, 2000)
+            # 충분한 기간(최대 5000일)을 한 번에 가져와 캐싱 (T10Y2Y 등 장기 시계열 대응)
+            fetch_limit = max(days, 5000)
             response = self.client.table("macro_indicators")\
                 .select("date, value")\
                 .eq("ticker", ticker)\
