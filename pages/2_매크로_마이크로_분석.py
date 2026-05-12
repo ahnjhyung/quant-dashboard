@@ -92,7 +92,7 @@ with st.sidebar:
     st.markdown("---")
     krx_dict = get_krx_stocks() if mode == "마이크로 분석" else {}
     if mode == "마이크로 분석":
-        ticker_input = st.text_input("종목명 또는 종목 코드", "삼성전자", help="예: 삼성전자, 카카오, TSLA, AAPL, 005930")
+        ticker_input = st.text_input("종목명 또는 종목 코드", "", help="예: 삼성전자, 카카오, TSLA, AAPL, 005930")
         period = st.selectbox("분석 범위", ["6개월","1년","2년","5년"], index=1)
         period_map = {"6개월":"6mo","1년":"1y","2년":"2y","5년":"5y"}
         sel_period = period_map[period]
@@ -450,7 +450,11 @@ elif mode == "마이크로 분석":
                 sw = swing_analyzer.full_analysis(ticker, period=sel_period)
                 st.session_state.update({'mi_ticker':ticker,'mi_fv':fv,'mi_sw':sw, 'mi_info':stock_info})
             except Exception as e:
-                st.error(f"분석 오류: {e}")
+                err_msg = str(e)
+                if "Too Many Requests" in err_msg or "Rate limited" in err_msg:
+                    st.error("⚠️ 야후 파이낸스 데이터 요청 한도(Rate Limit)를 초과했습니다. 약 1~2분 뒤에 다시 시도해 주세요.")
+                else:
+                    st.error(f"분석 오류: {e}")
 
     if 'mi_ticker' in st.session_state:
         ticker = st.session_state['mi_ticker']
