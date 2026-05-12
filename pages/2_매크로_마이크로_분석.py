@@ -67,6 +67,19 @@ st.markdown("""
     margin-bottom:14px;
 }
 .freq-tag { font-size:0.72rem; font-weight:700; color:#4f46e5; margin-bottom:6px; }
+
+/* 입력 필드 테두리 복원 (사이드바 흰색 배경 대응) */
+div[data-testid="stTextInput"] div[data-baseweb="input"],
+div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    background-color: #f8fafc !important;
+}
+div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+div[data-testid="stSelectbox"] div[data-baseweb="select"]:focus-within {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 1px #4f46e5 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
