@@ -431,8 +431,24 @@ if mode == "매크로 분석":
 #  MICRO MODE
 # ════════════════════════════════════════════
 elif mode == "마이크로 분석":
-    value_analyzer = ValueInvestingAnalyzer()
-    swing_analyzer = SwingTradingAnalyzer()
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def resolve_korean_ticker(raw_code):
+        s_analyzer = SwingTradingAnalyzer()
+        t_ks = f"{raw_code}.KS"
+        df = s_analyzer.get_ohlcv(t_ks, period="1mo")
+        if hasattr(df, 'empty') and df.empty:
+            return f"{raw_code}.KQ"
+        return t_ks
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def fetch_micro_data(ticker, period):
+        import yfinance as yf
+        v_analyzer = ValueInvestingAnalyzer()
+        s_analyzer = SwingTradingAnalyzer()
+        info = yf.Ticker(ticker).info
+        fv = v_analyzer.full_value_analysis(ticker)
+        sw = s_analyzer.full_analysis(ticker, period=period)
+        return info, fv, sw
 
     st.markdown("<h2 style='color:#1e293b;font-weight:800;'>Micro Analysis</h2>", unsafe_allow_html=True)
 
@@ -447,25 +463,19 @@ elif mode == "마이크로 분석":
             raw = raw.upper()
             
         if raw.isdigit() and len(raw) == 6:
-            ticker = f"{raw}.KS"
-            with st.spinner(f"코스피 확인 중: {ticker}"):
-                test_df = swing_analyzer.get_ohlcv(ticker, period="1mo")
-                if hasattr(test_df,'empty') and test_df.empty:
-                    ticker = f"{raw}.KQ"
+            with st.spinner(f"한국 주식 종목코드 확인 중: {raw}"):
+                ticker = resolve_korean_ticker(raw)
         else:
             ticker = raw
 
         with st.spinner(f"분석 중: {ticker}"):
             try:
-                import yfinance as yf
-                stock_info = yf.Ticker(ticker).info
-                fv = value_analyzer.full_value_analysis(ticker)
-                sw = swing_analyzer.full_analysis(ticker, period=sel_period)
+                stock_info, fv, sw = fetch_micro_data(ticker, sel_period)
                 st.session_state.update({'mi_ticker':ticker,'mi_fv':fv,'mi_sw':sw, 'mi_info':stock_info})
             except Exception as e:
                 err_msg = str(e)
                 if "Too Many Requests" in err_msg or "Rate limited" in err_msg:
-                    st.error("야후 파이낸스 데이터 요청 한도(Rate Limit)를 초과했습니다. 약 1~2분 뒤에 다시 시도해 주세요.")
+                    st.error("야후 파이낸스 데이터 요청 한도(Rate Limit)를 초과했습니다. 약 1~2분 뒤에 다시 시도해 주세요. (또는 너무 잦은 요청으로 일시 차단되었습니다.)")
                 else:
                     st.error(f"분석 오류: {e}")
 
