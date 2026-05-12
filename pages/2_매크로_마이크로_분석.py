@@ -452,7 +452,7 @@ elif mode == "마이크로 분석":
             except Exception as e:
                 err_msg = str(e)
                 if "Too Many Requests" in err_msg or "Rate limited" in err_msg:
-                    st.error("⚠️ 야후 파이낸스 데이터 요청 한도(Rate Limit)를 초과했습니다. 약 1~2분 뒤에 다시 시도해 주세요.")
+                    st.error("야후 파이낸스 데이터 요청 한도(Rate Limit)를 초과했습니다. 약 1~2분 뒤에 다시 시도해 주세요.")
                 else:
                     st.error(f"분석 오류: {e}")
 
