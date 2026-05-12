@@ -485,11 +485,17 @@ elif mode == "마이크로 분석":
         
         with tab1:
             st.markdown("#### 핵심 재무 지표 및 가치 평가")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Piotroski F-Score", f"{fv.get('piotroski_score',0)}/9", fv.get('fscore_category',''))
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric(
+                "Piotroski F-Score", 
+                f"{fv.get('piotroski_score',0)}/9", 
+                fv.get('fscore_category',''),
+                help="Piotroski F-Score는 기업의 재무 건전성을 9점 만점으로 평가하는 가치투자 지표입니다. 수익성, 레버리지/유동성, 효율성을 종합적으로 판단하며 7점 이상일 경우 우량 기업으로 분류됩니다."
+            )
             c2.metric("DCF 상승여력", f"{fv.get('upside_pct',0):.1f}%")
-            c3.metric("가치투자 기댓값(EV)", f"{fv.get('expected_value_pct',0):.1f}%")
+            c3.metric("기댓값(EV)", f"{fv.get('expected_value_pct',0):.1f}%")
             c4.metric("PER / PBR", f"{fv.get('per',0):.1f} / {fv.get('pbr',0):.1f}")
+            c5.metric("ROE", f"{fv.get('roe',0):.1f}%")
             
             st.markdown("##### DCF 기반 안전마진 산출")
             if fv.get('dcf_valid', False):
@@ -508,9 +514,35 @@ elif mode == "마이크로 분석":
             c4.metric("볼린저 밴드 %B", f"{bb_pct:.2f}")
 
             risk = sw.get('risk_management', {})
-            st.markdown(f"**진입가:** {risk.get('entry',0):,} | **손절가:** {risk.get('stop_loss',0):,} | **목표가:** {risk.get('target',0):,}")
-            st.markdown(f"**단기 트레이딩 기댓값(EV):** {risk.get('expected_value_pct',0)*100:.2f}% | **승률 추정치:** {risk.get('win_probability',0)*100:.1f}%")
+            entry = risk.get('entry',0)
+            target = risk.get('target',0)
+            stop_loss = risk.get('stop_loss',0)
+            expected_rtn = risk.get('expected_value_pct',0)*100
+            win_prob = risk.get('win_probability',0)*100
 
+            st.markdown("##### 💡 단기 트레이딩 매매 전략")
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; background-color:#eef2ff; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #c7d2fe;">
+                <div style="text-align:center;">
+                    <div style="color:#4f46e5; font-size:0.9em; font-weight:bold;">추천 매수가 (현재가)</div>
+                    <div style="font-size:1.2em; font-weight:bold;">{entry:,.2f}</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="color:#16a34a; font-size:0.9em; font-weight:bold;">1차 목표가</div>
+                    <div style="font-size:1.2em; font-weight:bold;">{target:,.2f}</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="color:#dc2626; font-size:0.9em; font-weight:bold;">손절가 (Stop Loss)</div>
+                    <div style="font-size:1.2em; font-weight:bold;">{stop_loss:,.2f}</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="color:#d97706; font-size:0.9em; font-weight:bold;">단기 예상 수익률 (EV)</div>
+                    <div style="font-size:1.2em; font-weight:bold;">{expected_rtn:.2f}%</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.caption(f"*추정 승률: {win_prob:.1f}% (최근 추세 및 보조지표 강도 반영)*")
             df_chart = sw.get('ohlcv')
             if df_chart is not None and not df_chart.empty:
                 st.markdown("##### 캔들스틱 및 이동평균 차트")
