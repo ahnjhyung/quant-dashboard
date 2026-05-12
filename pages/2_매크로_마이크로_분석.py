@@ -141,6 +141,11 @@ INDICATORS = [
 KEY_LIST = [i["key"] for i in INDICATORS]
 FREQ_BADGE = {"Daily":"bd","Weekly":"bw","Monthly":"bm"}
 
+# 음수가 정상인 지표 (> 0 필터 미적용)
+ALLOW_NEGATIVE = {"T10Y2Y", "T10Y3M", "NET_LIQUIDITY", "NFCI", "BAMLH0A0HYM2"}
+# 단위 변환: 건 → 만 건
+UNIT_DIVIDERS = {"ICSA": (10000, "만 건")}
+
 # ════════════════════════════════════════════
 #  MACRO MODE
 # ════════════════════════════════════════════
@@ -231,19 +236,46 @@ if mode == "매크로 분석":
 
     if h is not None and not h.empty:
         h = h.sort_index()
-        # 유효 데이터만
         h = h[h['value'].notna()]
-        if sel_key not in ["NET_LIQUIDITY","WALCL_B","TGA_B","RRP_B","RRPONTSYD"]:
+        # 음수가 정상인 지표는 > 0 필터 미적용
+        if sel_key not in ALLOW_NEGATIVE:
             h = h[h['value'] > 0]
 
         if not h.empty:
-            current_val = float(h['value'].iloc[-1])
-            u = sel_ind["unit"]
-            cur_label = f"{current_val:,.2f}{u}" if u not in ["B","건","₩"] else f"{current_val:,.1f}{u}"
+            # 단위 변환 (ICSA: 건 → 만 건)
+            div, display_unit = UNIT_DIVIDERS.get(sel_key, (1, sel_ind["unit"]))
+            plot_values = h['value'] / div
+            current_val = float(plot_values.iloc[-1])
+            u = display_unit
+
+            if u in ["B", "₩", "만 건"]:
+                cur_label = f"{current_val:,.1f} {u}"
+                def fmt(v): return f"{v:,.1f} {u}"
+            elif u == "건":
+                cur_label = f"{int(current_val):,} {u}"
+                def fmt(v): return f"{int(v):,} {u}"
+            else:
+                cur_label = f"{current_val:,.2f}{u}"
+                def fmt(v): return f"{v:,.2f}{u}"
+
+            # 리샘플 (일별 데이터가 많을 때 주간 집계로 가독성 개선)
+            freq_rs = sel_ind["freq"]
+            if freq_rs == "Daily" and len(plot_values) > 400:
+                plot_s = plot_values.resample("W").last().dropna()
+            elif freq_rs == "Weekly" and len(plot_values) > 300:
+                plot_s = plot_values.resample("W").last().dropna()
+            else:
+                plot_s = plot_values
+
+            # 임계값도 동일하게 나눔
+            thresholds_adj = [
+                {**th, "value": th["value"] / div}
+                for th in sel_ind.get("thresholds", [])
+            ]
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=h.index, y=h['value'],
+                x=plot_s.index, y=plot_s.values,
                 mode='lines',
                 line=dict(color=sel_ind["color"], width=2),
                 fill='tozeroy',
@@ -252,11 +284,11 @@ if mode == "매크로 분석":
                 name=sel_ind["name"]
             ))
 
-            for th in sel_ind.get("thresholds", []):
+            for th in thresholds_adj:
                 fig.add_hline(
                     y=th["value"],
                     line_dash="dash", line_color=th["color"], line_width=1.5,
-                    annotation_text=f"  {th['label']} ({th['value']})",
+                    annotation_text=f"  {th['label']} ({th['value']:.1f} {u})",
                     annotation_position="top left",
                     annotation_font_size=11, annotation_font_color=th["color"],
                 )
@@ -268,33 +300,23 @@ if mode == "매크로 분석":
                 annotation_font_size=12, annotation_font_color="#1e293b",
             )
 
-            freq_resample = {"Daily":"W","Weekly":"W","Monthly":"M"}
-            resample_key = freq_resample.get(sel_ind["freq"], "W")
-            if len(h) > 500:
-                h_plot = h['value'].resample(resample_key).last().dropna()
-            else:
-                h_plot = h['value']
-
-            fig.data[0].x = h_plot.index
-            fig.data[0].y = h_plot.values
-
             fig.update_layout(
                 height=420,
-                margin=dict(l=55,r=55,t=40,b=50),
+                margin=dict(l=60, r=60, t=40, b=50),
                 template="plotly_white",
                 showlegend=False,
                 xaxis=dict(showgrid=True, gridcolor="#f1f5f9", title="날짜"),
-                yaxis=dict(showgrid=True, gridcolor="#f1f5f9", title=u or sel_ind["name"]),
+                yaxis=dict(showgrid=True, gridcolor="#f1f5f9", title=u),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
             )
             st.plotly_chart(fig, use_container_width=True)
 
             mc1, mc2, mc3, mc4 = st.columns(4)
-            y1 = h['value'].tail(365)
+            y1 = plot_values.tail(365)
             mc1.metric("현재값", cur_label)
-            mc2.metric("52주 최고", f"{y1.max():,.2f}{u}" if u not in ['B','건','₩'] else f"{y1.max():,.1f}{u}")
-            mc3.metric("52주 최저", f"{y1.min():,.2f}{u}" if u not in ['B','건','₩'] else f"{y1.min():,.1f}{u}")
-            mc4.metric("52주 평균", f"{y1.mean():,.2f}{u}" if u not in ['B','건','₩'] else f"{y1.mean():,.1f}{u}")
+            mc2.metric("52주 최고", fmt(y1.max()))
+            mc3.metric("52주 최저", fmt(y1.min()))
+            mc4.metric("52주 평균", fmt(y1.mean()))
         else:
             st.warning(f"{sel_ind['name']}: 유효한 데이터가 없습니다.")
     else:

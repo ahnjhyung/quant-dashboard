@@ -141,14 +141,26 @@ class MacroBackfiller(MacroDataCollector):
 
 
     def run_essentials(self):
-        """핵심 지표들(CPI, INDPRO 등)만 우선 백필"""
-        essentials = ['CPIAUCSL', 'INDPRO', 'PCEPI', 'T10Y2Y', 'DGS10', 'WALCL', '^GSPC', 'GC=F']
+        """핵심 지표들 우선 백필 (N/A 해소 대상 포함)"""
+        essentials_fred = [
+            'CPIAUCSL', 'INDPRO', 'PCEPI', 'T10Y2Y', 'T10Y3M',
+            'DGS2', 'DGS10', 'DGS30',       # 금리/스프레드
+            'SOFR',                           # 단기 기준금리
+            'UNRATE', 'ICSA',                # 고용
+            'VIXCLS', 'DEXKOUS',             # 리스크/FX
+            'BAMLH0A0HYM2', 'BAMLH0A0HYM2EY',  # HY 스프레드
+            'RRPONTSYD', 'WALCL', 'WDTGAL', # 유동성
+        ]
+        essentials_yf = ['^GSPC', 'GC=F']
         print("=== [ESSENTIAL BACKFILL START] ===")
-        for t in essentials:
+        for t in essentials_fred:
             if t in self.indicators['FRED']:
                 self.backfill_fred_ticker(t)
             else:
-                self.backfill_yf_ticker(t)
+                print(f"    [SKIP] {t} not in FRED indicator list — adding dynamically")
+                self.backfill_fred_ticker(t)  # 목록에 없어도 직접 시도
+        for t in essentials_yf:
+            self.backfill_yf_ticker(t)
         print("=== [ESSENTIAL BACKFILL COMPLETE] ===")
 
     def run_derived(self):
@@ -158,5 +170,16 @@ class MacroBackfiller(MacroDataCollector):
         print("=== [DERIVED BACKFILL COMPLETE] ===")
 
 if __name__ == "__main__":
+    import sys
     backfiller = MacroBackfiller()
-    backfiller.run_derived()
+    mode = sys.argv[1] if len(sys.argv) > 1 else "essentials"
+    if mode == "all":
+        backfiller.backfill_all_indicators()
+        backfiller.run_derived()
+    elif mode == "derived":
+        backfiller.run_derived()
+    else:
+        # 기본: 핵심 지표 븱필 후 파생 지표 계산
+        backfiller.run_essentials()
+        backfiller.run_derived()
+        print("[DONE] 핵심 지표 백필 완료. N/A 지표에 데이터가 적재되었습니다.")
