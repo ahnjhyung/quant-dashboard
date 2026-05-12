@@ -115,17 +115,17 @@ INDICATORS = [
     {"key":"BAMLH0A0HYM2","name":"하이일드 스프레드","unit":"%","freq":"Daily","color":"#dc2626",
      "thresholds":[{"label":"신용 위기","value":7.0,"color":"red"},{"label":"경계","value":4.0,"color":"orange"},{"label":"정상","value":3.0,"color":"green"}],
      "desc":"<b>하이일드 스프레드(BAMLH0A0HYM2)</b>는 정크본드와 국채 간 금리 차이입니다. 스프레드 확대는 기업 부도 리스크 증가 및 신용 경색을 의미합니다. 4% 이상 경계, 7% 이상 위기 수준입니다.","good_low":True},
-    {"key":"NET_LIQUIDITY","name":"실질 순유동성","unit":"B","freq":"Weekly","color":"#10b981",
-     "thresholds":[{"label":"유동성 축소 경계","value":5500,"color":"orange"}],
+    {"key":"NET_LIQUIDITY","name":"실질 순유동성","unit":"$B","freq":"Weekly","color":"#10b981",
+     "thresholds":[{"label":"유동성 축소 경계","value":5_500_000,"color":"orange"}],
      "desc":"<b>실질 순유동성 = 연준 총자산 − TGA − RRP</b>입니다. 실제 시장에 공급된 달러 규모를 측정하며 주가와 높은 상관관계를 보입니다. 순유동성 증가 = 자산시장 우호.","good_low":False},
-    {"key":"WALCL_B","name":"연준 총자산 (Fed Assets)","unit":"B","freq":"Weekly","color":"#059669",
-     "thresholds":[{"label":"QT 임계점","value":7000,"color":"orange"}],
-     "desc":"<b>연준 총자산</b>은 양적완화(QE)/긴축(QT)의 척도입니다. 자산 증가 = 달러 공급 확대(주식 우호), 자산 감소(QT) = 달러 회수(주식 부담).","good_low":False},
-    {"key":"RRPONTSYD","name":"역레포 잔액 (RRP)","unit":"B","freq":"Daily","color":"#6366f1",
+    {"key":"WALCL","name":"연준 총자산 (Fed Assets)","unit":"$B","freq":"Weekly","color":"#059669",
+     "thresholds":[{"label":"QT 임계점","value":7_000_000,"color":"orange"}],
+     "desc":"<b>연준 총자산</b>은 양적완화(QE)/긴축(QT)의 척도입니다. 자산 증가 = 달러 공급 확대(주식 우호), 자산 감소(QT) = 달러 회수(주식 부담). 단위: 억달러($B).","good_low":False},
+    {"key":"RRPONTSYD","name":"역레포 잔액 (RRP)","unit":"$B","freq":"Daily","color":"#6366f1",
      "thresholds":[{"label":"유동성 소진 임박","value":100,"color":"red"},{"label":"정상","value":500,"color":"green"}],
      "desc":"<b>역레포 잔액(RRPONTSYD)</b>은 시중에 갈 곳 없는 유휴 달러가 연준에 주차된 규모입니다. 잔액 감소는 유동성이 시장으로 공급되는 신호이며, 0에 근접하면 추가 유동성 공급이 어려워집니다.","good_low":False},
-    {"key":"TGA_B","name":"재무부 일반계정 (TGA)","unit":"B","freq":"Weekly","color":"#0891b2",
-     "thresholds":[{"label":"부채한도 임박","value":200,"color":"red"}],
+    {"key":"WDTGAL","name":"재무부 일반계정 (TGA)","unit":"$B","freq":"Weekly","color":"#0891b2",
+     "thresholds":[{"label":"부채한도 임박","value":200_000,"color":"red"}],
      "desc":"<b>TGA(Treasury General Account)</b>는 미국 정부의 당좌예금입니다. TGA 잔고가 줄어들면 정부 지출이 시장으로 유입되어 유동성이 증가합니다.","good_low":False},
     {"key":"CPIAUCSL","name":"미국 CPI (소비자물가 YoY)","unit":"%","freq":"Monthly","color":"#f97316",
      "thresholds":[{"label":"Fed 목표","value":2.0,"color":"green"},{"label":"경계","value":3.0,"color":"orange"},{"label":"고인플레이션","value":5.0,"color":"red"}],
@@ -143,8 +143,16 @@ FREQ_BADGE = {"Daily":"bd","Weekly":"bw","Monthly":"bm"}
 
 # 음수가 정상인 지표 (> 0 필터 미적용)
 ALLOW_NEGATIVE = {"T10Y2Y", "T10Y3M", "NET_LIQUIDITY", "NFCI", "BAMLH0A0HYM2"}
-# 단위 변환: 건 → 만 건
-UNIT_DIVIDERS = {"ICSA": (10000, "만 건")}
+
+# 단위 변환 테이블: {ticker: (나누는 값, 표시 단위)}
+# WALCL/WDTGAL/NET_LIQUIDITY는 FRED에서 '백만달러' 단위로 저장 → ÷1000 → 10억달러($B)
+# ICSA는 '건' 단위 → ÷10000 → '만 건'
+UNIT_DIVIDERS = {
+    "WALCL":        (1_000, "$B"),   # M$ → B$ (7,100,000M → 7,100 $B ≈ $7.1T)
+    "WDTGAL":       (1_000, "$B"),   # M$ → B$ (700,000M  → 700 $B ≈ $0.7T)
+    "NET_LIQUIDITY":(1_000, "$B"),   # M$ → B$ (6,300,000M → 6,300 $B ≈ $6.3T)
+    "ICSA":         (10_000, "만 건"),
+}
 
 # ════════════════════════════════════════════
 #  MACRO MODE
@@ -181,19 +189,30 @@ if mode == "매크로 분석":
             if val is None:
                 val_str, delta_str, delta_color = "N/A", "", "#94a3b8"
             else:
-                u = ind["unit"]
-                if u == "₩":
-                    val_str = f"{val:,.1f}{u}"
-                elif u == "B":
-                    val_str = f"{val:,.1f}{u}"
-                elif u == "건":
-                    val_str = f"{int(val):,}{u}"
-                else:
-                    val_str = f"{val:,.2f}{u}"
+                # 단위 변환 적용 (카드 표시)
+                cdiv, cu = UNIT_DIVIDERS.get(ind["key"], (1, ind["unit"]))
+                dval  = val  / cdiv
+                dprev = prev / cdiv if prev is not None else None
 
-                delta = (val - prev) if prev is not None else 0
+                if cu in ["$B"]:
+                    val_str = f"{dval:,.0f} {cu}"
+                elif cu == "만 건":
+                    val_str = f"{dval:,.1f} {cu}"
+                elif cu == "₩":
+                    val_str = f"{dval:,.1f}{cu}"
+                elif cu == "건":
+                    val_str = f"{int(dval):,}{cu}"
+                else:
+                    val_str = f"{dval:,.2f}{cu}"
+
+                delta = (dval - dprev) if dprev is not None else 0
                 sign = "+" if delta > 0 else ""
-                delta_str = f"{sign}{delta:,.2f}" if u not in ["B","건","₩"] else f"{sign}{delta:,.1f}"
+                if cu in ["$B"]:
+                    delta_str = f"{sign}{delta:,.0f}"
+                elif cu in ["만 건", "₩"]:
+                    delta_str = f"{sign}{delta:,.1f}"
+                else:
+                    delta_str = f"{sign}{delta:,.2f}"
                 if delta == 0:
                     delta_color = "#94a3b8"
                 elif ind["good_low"]:

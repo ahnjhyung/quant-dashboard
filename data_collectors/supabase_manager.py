@@ -149,7 +149,7 @@ class SupabaseManager:
             "FEDFUNDS", "DGS2", "DGS10", "DGS30", "T10Y2Y",
             "SOFR", "DEXKOUS", "VIXCLS",
             "BAMLH0A0HYM2", "BAMLH0A0HYM2EY",
-            "NET_LIQUIDITY", "WALCL_B", "TGA_B", "RRPONTSYD",
+            "NET_LIQUIDITY", "WALCL", "WDTGAL", "RRPONTSYD",
             "CPIAUCSL", "PCEPI", "UNRATE", "ICSA",
             "TEDRATE", "STLFSI3", "M2SL", "NFCI",
             "WTREGEN", "WALCL", "KR_BASE_RATE", "RRP_B",
