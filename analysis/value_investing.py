@@ -18,12 +18,15 @@ class ValueInvestingAnalyzer:
     """
 
     def __init__(self):
-        pass
+        self._stock_cache = {}
 
     def get_stock_info(self, ticker: str) -> dict:
         """
         Yahoo Finance에서 주식 기본 정보 및 재무 지표 수집
         """
+        if ticker in self._stock_cache:
+            return self._stock_cache[ticker]
+            
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
@@ -36,13 +39,15 @@ class ValueInvestingAnalyzer:
             except:
                 income, balance, cashflow = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
             
-            return {
+            result = {
                 'info': info,
                 'income': income,
                 'balance': balance,
                 'cashflow': cashflow,
                 'ticker': ticker,
             }
+            self._stock_cache[ticker] = result
+            return result
         except Exception as e:
             print(f"❌ 주식 정보 로드 실패 [{ticker}]: {e}")
             return {}

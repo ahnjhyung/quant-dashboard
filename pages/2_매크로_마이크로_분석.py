@@ -443,12 +443,24 @@ elif mode == "마이크로 분석":
     @st.cache_data(ttl=3600, show_spinner=False)
     def fetch_micro_data(ticker, period):
         import yfinance as yf
-        v_analyzer = ValueInvestingAnalyzer()
-        s_analyzer = SwingTradingAnalyzer()
-        info = yf.Ticker(ticker).info
-        fv = v_analyzer.full_value_analysis(ticker)
-        sw = s_analyzer.full_analysis(ticker, period=period)
-        return info, fv, sw
+        import time
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                v_analyzer = ValueInvestingAnalyzer()
+                s_analyzer = SwingTradingAnalyzer()
+                info = yf.Ticker(ticker).info
+                fv = v_analyzer.full_value_analysis(ticker)
+                sw = s_analyzer.full_analysis(ticker, period=period)
+                return info, fv, sw
+            except Exception as e:
+                err_str = str(e).lower()
+                if "too many requests" in err_str or "rate limit" in err_str or "429" in err_str:
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                raise e
 
     st.markdown("<h2 style='color:#1e293b;font-weight:800;'>Micro Analysis</h2>", unsafe_allow_html=True)
 
